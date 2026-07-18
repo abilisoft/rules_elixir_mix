@@ -17,7 +17,7 @@ elixir_config = use_extension(
 )
 elixir_config.prebuilt_toolchain(
     name = "otp29_elixir120",
-    elixir_sha256 = "71fe6d9184e48bd09a53c93cf804e3ee01f1b30f2045a35364cd0845ac1684a5",
+    elixir_sha256 = "cfdff0575134c095ef558c456df049864e0bb8e66ec61451ce9e77f0df3fcddd",
     elixir_type = "tar.gz",
     elixir_url = "file:///tmp/rules-elixir-mix-ci-elixir-with-version.tar.gz",
     elixir_version = "1.20.2",

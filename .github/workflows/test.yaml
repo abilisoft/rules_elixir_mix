@@ -69,7 +69,7 @@ jobs:
       - name: Package pinned OTP and Elixir runtimes deterministically
         run: |
           tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner --format=gnu -czf /tmp/rules-elixir-mix-ci-otp-container.tar.gz -C /usr/local/lib/erlang .
-          cp integration/ELIXIR_VERSION /usr/local/lib/elixir/VERSION
+          install -m 0644 integration/ELIXIR_VERSION /usr/local/lib/elixir/VERSION
           tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner --format=gnu -czf /tmp/rules-elixir-mix-ci-elixir-with-version.tar.gz -C /usr/local/lib/elixir .
       - name: Execute Mix, Hex, Rebar, ExUnit, release, and analysis actions
         working-directory: integration
