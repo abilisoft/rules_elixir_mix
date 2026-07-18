@@ -1,6 +1,6 @@
 """Direct, shell-free Mix execution helpers."""
 
-load("//private:beam_info.bzl", "ErlangAppInfo", "crypto_exec_inputs", "crypto_exec_tools", "erl_env_flags", "execution_root_path", "fips_erl_args", "flat_deps", "otp_runtime_env", "path_join", "runtime_path_erl_args", "test_erl_launcher")
+load("//private:beam_info.bzl", "ErlangAppInfo", "crypto_exec_inputs", "crypto_exec_tools", "crypto_runtime_files", "erl_env_flags", "execution_root_path", "fips_erl_args", "flat_deps", "otp_runtime_env", "path_join", "runtime_path_erl_args", "test_erl_launcher")
 load("//private:mix_info.bzl", "MixProjectInfo")
 
 _MIX_EVAL = """
@@ -329,6 +329,9 @@ try do
       |> Enum.each(&Code.ensure_loaded!/1)
     end)
   end
+  if System.get_env("RULES_ELIXIR_MIX_CONSOLIDATE_PROTOCOLS") == "true" do
+    Mix.ProjectStack.merge_config(consolidate_protocols: true)
+  end
 
   args = Enum.map(System.argv(), fn
     "__RULES_ELIXIR_MIX_OUTPUT__" ->
@@ -385,6 +388,25 @@ try do
         to_string(app),
       ]))
     end)
+  end
+  case System.get_env("RULES_ELIXIR_MIX_ARTIFACT_NORMALIZER") do
+    nil -> :ok
+    normalizer ->
+      normalizer = absolute_input.(normalizer) |> String.to_charlist()
+      compiled = :compile.file(normalizer, [:binary, :report_errors, :report_warnings])
+      :artifact_normalizer = elem(compiled, 1)
+      normalizer_binary = elem(compiled, 2)
+      {:module, :artifact_normalizer} =
+        :code.load_binary(:artifact_normalizer, normalizer, normalizer_binary)
+      app_root = Path.join([
+        System.fetch_env!("RULES_ELIXIR_MIX_BUILD_ROOT"),
+        System.fetch_env!("MIX_ENV"),
+        "lib",
+        System.fetch_env!("RULES_ELIXIR_MIX_APP"),
+      ])
+      stable_project_root = "/rules_elixir_mix/project"
+      :ok = :artifact_normalizer.normalize_beams(app_root, project_dir, stable_project_root)
+      :ok = :artifact_normalizer.assert_beams_absent(app_root, [project_dir, execution_root])
   end
   case System.get_env("RULES_ELIXIR_MIX_COMPILE_FINGERPRINT") do
     nil -> :ok
@@ -461,6 +483,20 @@ try do
       Enum.each(runtime_configs, fn runtime_config ->
         existing = File.read!(runtime_config)
         File.write!(runtime_config, [hook, "\n", existing])
+      end)
+  end
+  case System.get_env("RULES_ELIXIR_MIX_RELEASE_PROTOCOLS") do
+    nil -> :ok
+    protocols ->
+      release_root = System.fetch_env!("RULES_ELIXIR_MIX_RELEASE_ROOT")
+      versions = Path.wildcard(Path.join([release_root, "releases", "*"]))
+      |> Enum.filter(&File.dir?/1)
+      if versions == [], do: raise("release has no version directory for consolidated protocols")
+      Enum.each(versions, fn version_root ->
+        destination = Path.join(version_root, "consolidated")
+        File.rm_rf!(destination)
+        copy_input.(copy_input, absolute_input.(protocols), destination)
+        make_writable.(make_writable, destination)
       end)
   end
   case System.get_env("RULES_ELIXIR_MIX_FIPS_RELEASE_ENFORCEMENT") do
@@ -545,7 +581,9 @@ true = os:putenv("DATABASE_URL", "ecto://postgres@127.0.0.1:" ++ integer_to_list
 ok.
 """
 
-def _toolchain(ctx):
+def _toolchain(ctx, exec_group = None):
+    if exec_group:
+        return ctx.exec_groups[exec_group].toolchains["//:toolchain_type"]
     return ctx.toolchains["//:toolchain_type"]
 
 def _project_relative_path(file, project_root):
@@ -570,6 +608,7 @@ def _project_manifest(ctx, mix_config, project_inputs, project_entries = [], sho
     by_destination = {}
     entries = []
     explicitly_mapped = {}
+    explicitly_mapped_destinations = {}
     for entry in project_entries:
         _validate_project_destination(entry.destination, entry.source)
         if entry.destination in by_destination and by_destination[entry.destination].path != entry.source.path:
@@ -578,6 +617,7 @@ def _project_manifest(ctx, mix_config, project_inputs, project_entries = [], sho
             by_destination[entry.destination] = entry.source
             entries.append((entry.source.short_path if short_path else entry.source.path, entry.destination))
         explicitly_mapped[entry.source.path] = True
+        explicitly_mapped_destinations[entry.destination] = True
     for file in project_inputs:
         if file.path in explicitly_mapped:
             continue
@@ -586,6 +626,11 @@ def _project_manifest(ctx, mix_config, project_inputs, project_entries = [], sho
             fail("project input {} is outside source root '{}' and requires elixir_generated_source with an explicit destination".format(file, project_root or "."))
         if relative in by_destination:
             if by_destination[relative].path != file.path:
+                if relative in explicitly_mapped_destinations:
+                    # Writable local workflows may have materialized an
+                    # explicitly mapped generated source in the workspace.
+                    # The declared generated artifact remains authoritative.
+                    continue
                 fail("project inputs {} and {} both map to '{}'".format(by_destination[relative], file, relative))
             continue
         by_destination[relative] = file
@@ -684,7 +729,7 @@ def validate_user_env(user_env):
         if key in reserved or any([key.startswith(prefix) for prefix in reserved_prefixes]):
             fail("environment variable '{}' is owned by rules_elixir_mix and cannot be overridden".format(key))
 
-def mix_action_env(ctx, mix_env, build_root, deps, internal_extra = {}, user_extra = {}):
+def mix_action_env(ctx, mix_env, build_root, deps, internal_extra = {}, user_extra = {}, toolchain = None):
     """Return a complete, strict environment for a Mix build action.
 
     Args:
@@ -694,11 +739,12 @@ def mix_action_env(ctx, mix_env, build_root, deps, internal_extra = {}, user_ext
       deps: Direct Mix application dependencies.
       internal_extra: Rule-owned explicit environment entries.
       user_extra: Caller environment entries, excluding rule-owned namespaces.
+      toolchain: Optional already-resolved combined BEAM toolchain.
 
     Returns:
       Environment dictionary with no host-environment inheritance.
     """
-    toolchain = _toolchain(ctx)
+    toolchain = toolchain or _toolchain(ctx)
     work_root = build_root + ".rules_elixir_mix_state"
     validate_user_env(user_extra)
     env = otp_runtime_env(toolchain.otpinfo)
@@ -750,6 +796,8 @@ def run_mix_action(
         stage_build_cache = True,
         action_inputs = None,
         action_tools = [],
+        action_execution_requirements = {},
+        exec_group = None,
         mnemonic = "MIX"):
     """Invoke Mix through erl and the declared Elixir BEAM runtime.
 
@@ -770,9 +818,11 @@ def run_mix_action(
       stage_build_cache: Whether compiled dependencies are copied into MIX_BUILD_ROOT.
       action_inputs: Optional depset of extra declared inputs for selective compilers.
       action_tools: Optional FilesToRunProvider list for selective compilers.
+      action_execution_requirements: Extra requirements from a selective compiler toolchain.
+      exec_group: Optional named execution group coupling all action toolchains and tools.
       mnemonic: Bazel action mnemonic.
     """
-    toolchain = _toolchain(ctx)
+    toolchain = _toolchain(ctx, exec_group)
     project_manifest = _project_manifest(ctx, mix_config, project_inputs, project_entries = project_entries)
     dependency_manifest, dependency_inputs = _dependency_manifest(ctx, deps)
     build_cache_manifest = _build_cache_manifest(ctx, flat_deps(deps)) if stage_build_cache else None
@@ -787,7 +837,7 @@ def run_mix_action(
             "RULES_ELIXIR_MIX_BUILD_CACHE_MANIFEST": build_cache_manifest.path,
             "RULES_ELIXIR_MIX_REMOVE_STAGED_DEPS": "true",
         })
-    env = mix_action_env(ctx, mix_env, build_root, deps, internal, user_env)
+    env = mix_action_env(ctx, mix_env, build_root, deps, internal, user_env, toolchain)
     env.update({
         "RULES_ELIXIR_MIX_EXS": mix_config.basename,
         "RULES_ELIXIR_MIX_PROJECT_DIR": path_join(state_dir, "project"),
@@ -817,21 +867,29 @@ def run_mix_action(
     if action_inputs != None:
         transitive_inputs.append(action_inputs)
 
-    ctx.actions.run(
-        executable = toolchain.otpinfo.erlexec,
-        arguments = [args],
-        inputs = depset(
+    execution_requirements = dict(action_execution_requirements)
+    if "block-network" in execution_requirements and execution_requirements["block-network"] not in ["", "1"]:
+        fail("C/C++ toolchain conflicts with the hermetic block-network execution requirement")
+    execution_requirements["block-network"] = "1"
+    action_parameters = {
+        "arguments": [args],
+        "env": env,
+        "executable": toolchain.otpinfo.erlexec,
+        "execution_requirements": execution_requirements,
+        "inputs": depset(
             direct = inputs + dependency_inputs + [project_manifest, dependency_manifest] + ([build_cache_manifest] if build_cache_manifest else []),
             transitive = transitive_inputs,
         ),
-        tools = crypto_exec_tools(toolchain.otpinfo) + action_tools,
-        outputs = outputs,
-        env = env,
-        execution_requirements = {"block-network": "1"},
-        mnemonic = mnemonic,
-        toolchain = "//:toolchain_type",
-        use_default_shell_env = False,
-    )
+        "mnemonic": mnemonic,
+        "outputs": outputs,
+        "tools": crypto_exec_tools(toolchain.otpinfo) + action_tools,
+        "use_default_shell_env": False,
+    }
+    if exec_group:
+        action_parameters["exec_group"] = exec_group
+    else:
+        action_parameters["toolchain"] = "//:toolchain_type"
+    ctx.actions.run(**action_parameters)
 
 def runfile_path_from_project(mix_info, file):
     """Return a test input path relative to the staged Mix project.
@@ -939,9 +997,7 @@ def mix_test_result(ctx, task, task_args, srcs, data, tools):
     # Analysis/test tasks may intentionally live in compile-only dependencies
     # (Credo, Sobelow, Dialyxir, test adapters). Stage the complete compile
     # closure without propagating those tools from the library at runtime.
-    dependency_targets = (
-        lib_info.runtime_deps.to_list() if task == "test" else lib_info.compile_deps.to_list()
-    )
+    dependency_targets = lib_info.compile_deps.to_list()
     app_targets = [ctx.attr.lib] + dependency_targets
     staged_targets = dependency_targets if task == "compile" else app_targets
     build_cache_manifest = _build_cache_manifest(ctx, staged_targets, short_path = True)
@@ -1012,7 +1068,10 @@ def mix_test_result(ctx, task, task_args, srcs, data, tools):
 
     runfiles = ctx.runfiles(
         files = srcs + ctx.files.config + ctx.files.data + ctx.files.tools + mix_info.project_files.to_list() + dependency_inputs + [build_cache_manifest, dependency_manifest, project_manifest],
-        transitive_files = toolchain.runtime_files,
+        transitive_files = depset(transitive = [
+            toolchain.runtime_files,
+            crypto_runtime_files(toolchain.otpinfo),
+        ]),
     ).merge(ctx.attr.lib[DefaultInfo].default_runfiles)
     for app in app_targets:
         runfiles = runfiles.merge(app[DefaultInfo].default_runfiles)

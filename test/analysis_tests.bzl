@@ -1,6 +1,55 @@
-"""Analysis-only regression checks that require no host BEAM runtime."""
+"""Regression checks and test-only helpers for the public rules."""
 
 load("//bzlmod:mix_lock_test_support.bzl", "parse_mix_lock")
+load("//private:beam_info.bzl", "ErlangAppInfo", "crypto_runtime_files", "erl_env_flags", "fips_erl_args", "otp_runtime_env", "runtime_path_erl_args", "test_erl_launcher")
+
+_FINGERPRINT_EQUALITY_EVAL = "[L,R]=init:get_plain_arguments(),{ok,LB}=file:read_file(L),{ok,RB}=file:read_file(R),case LB=:=RB of true->halt(0);false->io:format(standard_error,\"compiled artifact fingerprints differ: ~ts ~ts~n\",[L,R]),halt(1) end."
+
+def _fingerprint_equality_test_impl(ctx):
+    toolchain = ctx.toolchains["//:otp_toolchain_type"]
+    left = ctx.attr.left[ErlangAppInfo].compile_fingerprint
+    right = ctx.attr.right[ErlangAppInfo].compile_fingerprint
+    args = runtime_path_erl_args() + [
+        "-noshell",
+    ] + fips_erl_args(toolchain.otpinfo, runfiles = True) + [
+        "-eval",
+        _FINGERPRINT_EQUALITY_EVAL,
+        "-extra",
+        left.short_path,
+        right.short_path,
+    ]
+    environment = otp_runtime_env(toolchain.otpinfo, runfiles = True)
+    environment.update({
+        "ERL_AFLAGS": erl_env_flags(args),
+        "HOME": ".",
+        "LANG": "C",
+        "LC_ALL": "C",
+        "SOURCE_DATE_EPOCH": "946684800",
+        "TZ": "UTC",
+    })
+    return [
+        DefaultInfo(
+            executable = test_erl_launcher(ctx, toolchain.otpinfo),
+            runfiles = ctx.runfiles(
+                files = [left, right],
+                transitive_files = depset(transitive = [
+                    toolchain.runtime_files,
+                    crypto_runtime_files(toolchain.otpinfo),
+                ]),
+            ),
+        ),
+        RunEnvironmentInfo(environment = environment),
+    ]
+
+fingerprint_equality_test = rule(
+    implementation = _fingerprint_equality_test_impl,
+    attrs = {
+        "left": attr.label(mandatory = True, providers = [ErlangAppInfo]),
+        "right": attr.label(mandatory = True, providers = [ErlangAppInfo]),
+    },
+    test = True,
+    toolchains = ["//:otp_toolchain_type"],
+)
 
 def _mix_lock_analysis_check_impl(ctx):
     packages = parse_mix_lock(ctx.attr.content)

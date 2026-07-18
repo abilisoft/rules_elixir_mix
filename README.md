@@ -194,6 +194,60 @@ Elixir 1.20's gradual set-theoretic type inference runs in the normal compiler,
 so `mix_library` is the type-checking boundary. Warnings fail first-party
 compilation by default.
 
+## Direct Erlang applications
+
+`erlang_app` compiles one OTP application without Mix or Rebar while retaining
+the same toolchain, dependency, deterministic-BEAM, `priv`, include, and
+runfiles model:
+
+```starlark
+load(
+    "@rules_elixir_mix//:defs.bzl",
+    "erlang_app",
+    "erlang_common_test",
+    "erlang_eunit_test",
+)
+
+erlang_app(
+    name = "worker",
+    app_name = "worker",
+    version = "1.0.0",
+    srcs = glob([
+        "src/*.erl",
+        "src/*.xrl",
+        "src/*.yrl",
+    ]) + ["src/worker.app.src"],
+    hdrs = glob(["include/*.hrl"]),
+    defines = {"FEATURE_FLAG": "true"},
+    erlc_opts = ["warn_export_all"],
+    compile_deps = [":parse_transform"],
+    type_deps = [":public_types"],
+    runtime_deps = [":runtime_support"],
+)
+
+erlang_eunit_test(
+    name = "unit",
+    apps = [":worker"],
+)
+
+erlang_common_test(
+    name = "common",
+    apps = [":worker"],
+    suites = ["worker_SUITE"],
+    groups = ["integration"],
+    config = ["test/common_test.config"],
+    suite_data = {
+        "test/worker_SUITE_data/payload.json": "worker_SUITE/payload.json",
+    },
+)
+```
+
+Compiler options are Erlang terms, parsed without a shell. The rule owns
+deterministic/debug-info/output options so callers cannot accidentally disable
+reproducibility or Dialyzer input. Common Test supports explicit suites,
+groups, cases, hooks, repeat count, verbosity, config files, and suite data;
+Bazel supplies isolation, runfiles, caching, and test logs.
+
 ## Phoenix and LiveView
 
 Phoenix and LiveView use the same `mix_library` rule. Include `.heex`/`.eex`

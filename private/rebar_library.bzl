@@ -1,6 +1,6 @@
 """Shell-free Rebar3 compilation for Erlang Hex applications."""
 
-load("//private:beam_info.bzl", "ErlangAppInfo", "compile_depset", "crypto_exec_inputs", "crypto_exec_tools", "erl_env_flags", "fips_erl_args", "flat_compile_deps", "otp_runtime_env", "path_join", "runtime_depset")
+load("//private:beam_info.bzl", "ErlangAppInfo", "compile_depset", "crypto_exec_inputs", "crypto_exec_tools", "erl_env_flags", "fips_erl_args", "flat_compile_deps", "otp_runtime_env", "path_join", "runtime_depset", "type_depset")
 
 _RebarCompileInfo = provider(
     doc = "Internal result of a Rebar3 compile action.",
@@ -241,7 +241,7 @@ def _rebar_compile_impl(ctx):
         _REBAR_EVAL,
     ])
 
-    deps = flat_compile_deps(ctx.attr.compile_deps + ctx.attr.runtime_deps)
+    deps = flat_compile_deps(ctx.attr.compile_deps + ctx.attr.type_deps + ctx.attr.runtime_deps)
     inputs = ctx.files.srcs + ctx.files.priv + ctx.files.include + [ctx.file.rebar_config, ctx.file.rebar3]
     project_manifest = _project_manifest(ctx, ctx.files.srcs + ctx.files.priv + ctx.files.include + [ctx.file.rebar_config])
     environment = otp_runtime_env(toolchain.otpinfo)
@@ -311,6 +311,7 @@ _rebar_compile = rule(
         "include": attr.label_list(allow_files = True),
         "compile_deps": attr.label_list(providers = [ErlangAppInfo]),
         "runtime_deps": attr.label_list(providers = [ErlangAppInfo]),
+        "type_deps": attr.label_list(providers = [ErlangAppInfo]),
         "rebar_config": attr.label(mandatory = True, allow_single_file = True),
         "rebar3": attr.label(mandatory = True, allow_single_file = True, cfg = "exec"),
     },
@@ -323,8 +324,9 @@ def _rebar_library_info_impl(ctx):
     for dep in ctx.attr.runtime_deps:
         runfiles = runfiles.merge(dep[DefaultInfo].default_runfiles)
 
-    compile_deps = compile_depset(ctx.attr.compile_deps + ctx.attr.runtime_deps)
+    compile_deps = compile_depset(ctx.attr.compile_deps + ctx.attr.type_deps + ctx.attr.runtime_deps)
     runtime_deps = runtime_depset(ctx.attr.runtime_deps)
+    type_deps = type_depset(ctx.attr.type_deps + ctx.attr.runtime_deps)
     project_files = ctx.files.srcs + ctx.files.priv + ctx.files.include + [ctx.file.rebar_config]
     project_entries = _project_entries(ctx, project_files)
 
@@ -343,6 +345,7 @@ def _rebar_library_info_impl(ctx):
             direct_compile_deps = ctx.attr.compile_deps,
             direct_deps = ctx.attr.runtime_deps,
             direct_runtime_deps = ctx.attr.runtime_deps,
+            direct_type_deps = ctx.attr.type_deps,
             extra_apps = [],
             include = ctx.files.include,
             license_files = [],
@@ -352,6 +355,7 @@ def _rebar_library_info_impl(ctx):
             project_fingerprint = ctx.attr.compile[_RebarCompileInfo].project_fingerprint,
             project_root_short_path = ctx.file.rebar_config.short_path.rsplit("/", 1)[0] if "/" in ctx.file.rebar_config.short_path else "",
             runtime_deps = runtime_deps,
+            type_deps = type_deps,
             srcs = ctx.files.srcs,
         ),
     ]
@@ -366,6 +370,7 @@ _rebar_library_info = rule(
         "include": attr.label_list(allow_files = True),
         "compile_deps": attr.label_list(providers = [ErlangAppInfo]),
         "runtime_deps": attr.label_list(providers = [ErlangAppInfo]),
+        "type_deps": attr.label_list(providers = [ErlangAppInfo]),
         "rebar_config": attr.label(mandatory = True, allow_single_file = True),
     },
 )
@@ -390,6 +395,7 @@ def _rebar_library_impl(name, visibility, deps, **kwargs):
         rebar3 = kwargs["rebar3"],
         rebar_config = kwargs["rebar_config"],
         runtime_deps = runtime_deps,
+        type_deps = kwargs["type_deps"],
         srcs = kwargs["srcs"],
         visibility = ["//visibility:private"],
         **common
@@ -403,6 +409,7 @@ def _rebar_library_impl(name, visibility, deps, **kwargs):
         priv = kwargs["priv"],
         rebar_config = kwargs["rebar_config"],
         runtime_deps = runtime_deps,
+        type_deps = kwargs["type_deps"],
         srcs = kwargs["srcs"],
         visibility = visibility,
         **common
@@ -417,6 +424,7 @@ rebar_library = macro(
         "rebar3": attr.label(mandatory = True, allow_single_file = True, cfg = "exec"),
         "rebar_config": attr.label(mandatory = True, allow_single_file = True),
         "runtime_deps": attr.label_list(providers = [ErlangAppInfo], configurable = False),
+        "type_deps": attr.label_list(providers = [ErlangAppInfo], configurable = False),
         "tags": attr.string_list(configurable = False),
     },
     implementation = _rebar_library_impl,

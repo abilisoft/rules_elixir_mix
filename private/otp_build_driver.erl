@@ -28,7 +28,10 @@ main([ConfigPath]) ->
     Environment1 = maps:map(fun(_Key, Value) -> expand_path(Value) end, Environment0),
     Environment2 = compiler_flag_environment(Config, Environment1, ExecutionRoot),
     Environment = crypto_link_environment(Config, Environment2, ExecutionRoot),
-    PrefixMap = " -ffile-prefix-map=" ++ Work ++ "=. -fdebug-prefix-map=" ++ Work ++ "=.",
+    PrefixMap = " " ++ shell_join([
+        "-ffile-prefix-map=" ++ Work ++ "=.",
+        "-fdebug-prefix-map=" ++ Work ++ "=."
+    ]),
     BuildEnvironment = Environment#{
         "BINDIR" => false,
         "CFLAGS" => maps:get("CFLAGS", Environment, "") ++ PrefixMap,
@@ -85,10 +88,15 @@ main([ConfigPath]) ->
     Jobs = integer_to_list(maps:get(jobs, Config)),
     MakeShell = "SHELL=" ++ maps:get("SHELL", MakeEnvironment),
     MakeDeterministic = "ERL_DETERMINISTIC=yes",
+    %% OTP's generated Makefiles assign ARFLAGS themselves, so the action's
+    %% environment alone cannot carry the C/C++ toolchain's deterministic
+    %% archive policy. A command-line assignment has Make's required priority.
+    MakeArFlags = "ARFLAGS=" ++ maps:get("ARFLAGS", MakeEnvironment),
+    MakeVariables = [MakeShell, MakeDeterministic, MakeArFlags],
     MakeOptions = maps:get(make_options, Config),
     ok = run(
         maps:get(make, Config),
-        [MakeShell, MakeDeterministic, "-j" ++ Jobs] ++ MakeOptions ++ ["erl_interface"],
+        MakeVariables ++ ["-j" ++ Jobs] ++ MakeOptions ++ ["erl_interface"],
         Source,
         ExternalBootstrapEnvironment
     ),
@@ -100,7 +108,7 @@ main([ConfigPath]) ->
             %% a second time.
             ok = run(
                 maps:get(make, Config),
-                [MakeShell, MakeDeterministic, "-j" ++ Jobs] ++ MakeOptions ++ ["emulator_profile_generate"],
+                MakeVariables ++ ["-j" ++ Jobs] ++ MakeOptions ++ ["emulator_profile_generate"],
                 Source,
                 ExternalBootstrapEnvironment
             ),
@@ -113,13 +121,13 @@ main([ConfigPath]) ->
     %% through source/bootstrap/bin/erl is not safe.
     ok = run(
         maps:get(make, Config),
-        [MakeShell, MakeDeterministic, "-j" ++ Jobs] ++ PgoMakeOptions ++ MakeOptions ++ ["emulator"],
+        MakeVariables ++ ["-j" ++ Jobs] ++ PgoMakeOptions ++ MakeOptions ++ ["emulator"],
         Source,
         ExternalBootstrapEnvironment
     ),
     ok = run(
         maps:get(make, Config),
-        [MakeShell, MakeDeterministic, "-j" ++ Jobs] ++ MakeOptions ++ ["bootstrap_setup"],
+        MakeVariables ++ ["-j" ++ Jobs] ++ MakeOptions ++ ["bootstrap_setup"],
         Source,
         ExternalBootstrapEnvironment
     ),
@@ -128,19 +136,19 @@ main([ConfigPath]) ->
     %% secondary and tertiary applications can use the source runtime safely.
     ok = run(
         maps:get(make, Config),
-        [MakeShell, MakeDeterministic, "-j" ++ Jobs] ++ PgoMakeOptions ++ MakeOptions ++ ["all_bootstraps"],
+        MakeVariables ++ ["-j" ++ Jobs] ++ PgoMakeOptions ++ MakeOptions ++ ["all_bootstraps"],
         Source,
         MakeEnvironment
     ),
     ok = run(
         maps:get(make, Config),
-        [MakeShell, MakeDeterministic, "-j" ++ Jobs] ++ PgoMakeOptions ++ MakeOptions,
+        MakeVariables ++ ["-j" ++ Jobs] ++ PgoMakeOptions ++ MakeOptions,
         Source,
         MakeEnvironment
     ),
     ok = run(
         maps:get(make, Config),
-        [MakeShell, MakeDeterministic] ++ PgoMakeOptions ++ MakeOptions ++ ["install", "DESTDIR=" ++ Output],
+        MakeVariables ++ PgoMakeOptions ++ MakeOptions ++ ["install", "DESTDIR=" ++ Output],
         Source,
         MakeEnvironment
     ),
@@ -217,21 +225,41 @@ expand_path(Value) ->
     Value.
 
 compiler_flag_environment(Config, Environment, ExecutionRoot) ->
+    DynamicFlags = shell_join(normalize_flags(maps:get(ded_ldflags, Config, []), ExecutionRoot)),
+    DynamicLibraries = shell_join(normalize_flags(maps:get(ded_libs, Config, []), ExecutionRoot)),
     Environment#{
-        "CFLAGS" => string:join(normalize_flags(maps:get(cflags, Config, []), ExecutionRoot), " "),
-        "CXXFLAGS" => string:join(normalize_flags(maps:get(cxxflags, Config, []), ExecutionRoot), " "),
-        "LDFLAGS" => string:join(normalize_flags(maps:get(ldflags, Config, []), ExecutionRoot), " ")
+        "ARFLAGS" => shell_join(normalize_flags(maps:get(arflags, Config, []), ExecutionRoot)),
+        "CFLAGS" => shell_join(normalize_flags(maps:get(cflags, Config, []), ExecutionRoot)),
+        "CXXFLAGS" => shell_join(normalize_flags(maps:get(cxxflags, Config, []), ExecutionRoot)),
+        "DED_LD" => absolute(maps:get(ded_ld, Config)),
+        "DED_LD_FLAG_RUNTIME_LIBRARY_PATH" => maps:get(ded_ld_runtime_library_path, Config),
+        "DED_LIBS" => DynamicLibraries,
+        "DED_LDFLAGS" => DynamicFlags,
+        "DED_LDFLAGS_CONFTEST" => DynamicFlags,
+        "LDFLAGS" => shell_join(normalize_flags(maps:get(ldflags, Config, []), ExecutionRoot))
     }.
+
+shell_join(Values) ->
+    string:join([shell_quote(Value) || Value <- Values], " ").
+
+shell_quote([]) ->
+    "''";
+shell_quote(Value) ->
+    Safe = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_@%+=:,./-",
+    case lists:all(fun(Character) -> lists:member(Character, Safe) end, Value) of
+        true -> Value;
+        false -> "'" ++ lists:flatten(string:replace(Value, "'", "'\"'\"'", all)) ++ "'"
+    end.
 
 crypto_link_environment(Config, Environment, ExecutionRoot) ->
     ToolchainLibraries = normalize_flags(maps:get(libraries, Config, []), ExecutionRoot),
     case maps:get(crypto_sdk, Config, none) of
         none ->
-            Environment#{"LIBS" => string:join(ToolchainLibraries, " ")};
+            Environment#{"LIBS" => shell_join(ToolchainLibraries)};
         Sysroot0 ->
             Archive = filename:join([absolute(Sysroot0), "lib", "libcrypto.a"]),
             LinkOptions = normalize_flags(maps:get(crypto_linkopts, Config, []), ExecutionRoot),
-            Environment#{"LIBS" => string:join([Archive | LinkOptions] ++ ToolchainLibraries, " ")}
+            Environment#{"LIBS" => shell_join([Archive | LinkOptions] ++ ToolchainLibraries)}
     end.
 
 normalize_flags([], _ExecutionRoot) ->

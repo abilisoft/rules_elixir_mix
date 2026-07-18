@@ -1,6 +1,6 @@
 """Cacheable Dialyzer PLTs and shell-free BEAM analysis tests."""
 
-load("//private:beam_info.bzl", "ErlangAppInfo", "crypto_exec_inputs", "crypto_exec_tools", "erl_env_flags", "fips_erl_args", "flat_runtime_deps", "otp_runtime_env", "path_join", "runtime_path_erl_args", "test_erl_launcher")
+load("//private:beam_info.bzl", "ErlangAppInfo", "crypto_exec_inputs", "crypto_exec_tools", "crypto_runtime_files", "erl_env_flags", "fips_erl_args", "flat_type_deps", "otp_runtime_env", "path_join", "runtime_path_erl_args", "test_erl_launcher")
 
 DialyzerPltInfo = provider(
     doc = "A cacheable Dialyzer persistent lookup table.",
@@ -188,7 +188,7 @@ def _dedupe_roots(apps, short_path = False):
 def _dialyzer_plt_impl(ctx):
     if ctx.attr.apps and ctx.attr.deps:
         fail("dialyzer_plt apps and deps are aliases; set only deps")
-    apps = flat_runtime_deps(ctx.attr.deps or ctx.attr.apps)
+    apps = flat_type_deps(ctx.attr.deps or ctx.attr.apps)
     roots = _dedupe_roots(apps)
     output = ctx.actions.declare_file(ctx.label.name + ".plt")
     toolchain = ctx.toolchains["//:toolchain_type"]
@@ -270,9 +270,9 @@ dialyzer_plt = rule(
 
 def _elixir_dialyzer_test_impl(ctx):
     analyzed_apps = ctx.attr.apps
-    runtime_apps = flat_runtime_deps(analyzed_apps)
+    type_apps = flat_type_deps(analyzed_apps)
     analysis_roots = _dedupe_roots(analyzed_apps, short_path = True)
-    runtime_roots = _dedupe_roots(runtime_apps, short_path = True)
+    type_roots = _dedupe_roots(type_apps, short_path = True)
     toolchain = ctx.toolchains["//:toolchain_type"]
     plt_info = ctx.attr.plt[DialyzerPltInfo]
     plt = plt_info.file
@@ -286,12 +286,12 @@ def _elixir_dialyzer_test_impl(ctx):
     analyzed_names = {app[ErlangAppInfo].app_name: True for app in analyzed_apps}
     required_plt_apps = {
         app[ErlangAppInfo].app_name: True
-        for app in runtime_apps
+        for app in type_apps
         if app[ErlangAppInfo].app_name not in analyzed_names
     }
     missing = sorted([name for name in required_plt_apps if name not in plt_info.apps])
     if missing:
-        fail("Dialyzer PLT is missing runtime dependencies {}; build it with deps = [...] rather than the analyzed roots".format(missing))
+        fail("Dialyzer PLT is missing compile/type dependencies {}; build it with deps = [...] rather than the analyzed roots".format(missing))
     args = runtime_path_erl_args() + [
         "-noshell",
         "+fnu",
@@ -308,7 +308,7 @@ def _elixir_dialyzer_test_impl(ctx):
     environment = otp_runtime_env(toolchain.otpinfo, runfiles = True)
     environment.update({
         "ERL_AFLAGS": erl_env_flags(args),
-        "ERL_LIBS": ":".join([path_join(toolchain.elixirinfo.elixir_home_short_path, "lib")] + runtime_roots),
+        "ERL_LIBS": ":".join([path_join(toolchain.elixirinfo.elixir_home_short_path, "lib")] + type_roots),
         "HOME": ".",
         "LANG": "C",
         "LC_ALL": "C",
@@ -319,9 +319,12 @@ def _elixir_dialyzer_test_impl(ctx):
 
     runfiles = ctx.runfiles(
         files = [plt],
-        transitive_files = toolchain.runtime_files,
+        transitive_files = depset(transitive = [
+            toolchain.runtime_files,
+            crypto_runtime_files(toolchain.otpinfo),
+        ]),
     ).merge(ctx.attr.plt[DefaultInfo].default_runfiles)
-    for app in runtime_apps:
+    for app in type_apps:
         runfiles = runfiles.merge(app[DefaultInfo].default_runfiles)
     return [
         DefaultInfo(executable = test_erl_launcher(ctx, toolchain.otpinfo), runfiles = runfiles),

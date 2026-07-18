@@ -35,8 +35,10 @@ main([ConfigPath]) ->
         lists:member(Transform, InternalModules)
     ]),
     true = code:add_patha(Ebin),
+    Defines = [define_option(Name, Value) || {Name, Value} <- maps:get(defines, Config, [])],
+    UserOptions = [parse_term(Option) || Option <- maps:get(erlc_opts, Config, [])],
     CompileOptions = [deterministic, debug_info, report_errors, report_warnings, {outdir, Ebin}] ++
-        option(maps:get(warnings_as_errors, Config), warnings_as_errors) ++ IncludeOptions,
+        option(maps:get(warnings_as_errors, Config), warnings_as_errors) ++ Defines ++ IncludeOptions ++ UserOptions,
     Modules = lists:sort([
         compile_source(Source, CompileOptions, TransformModules)
      || {Source, _Module, _Transforms} <- OrderedSources
@@ -44,9 +46,22 @@ main([ConfigPath]) ->
     ok = write_application(Config, Ebin, Modules),
     ok = stage_entries(maps:get(headers, Config, []), filename:join(AppRoot, "include")),
     ok = stage_priv(maps:get(priv, Config), filename:join(AppRoot, "priv")),
+    ExecutionRoot = absolute("."),
+    ok = artifact_normalizer:normalize_beams(AppRoot, ExecutionRoot, "/rules_elixir_mix/execroot"),
+    ok = artifact_normalizer:assert_beams_absent(AppRoot, [ExecutionRoot]),
     ok = write_fingerprint(AppRoot, maps:get(fingerprint, Config)),
     ok = remove(Output ++ ".work"),
     ok.
+
+define_option(Name, "") ->
+    {d, list_to_atom(Name)};
+define_option(Name, Value) ->
+    {d, list_to_atom(Name), parse_term(Value)}.
+
+parse_term(Value) ->
+    {ok, Tokens, _} = erl_scan:string(Value ++ "."),
+    {ok, Term} = erl_parse:parse_term(Tokens),
+    Term.
 
 generate_source(Source, Generated) ->
     case filename:extension(Source) of
@@ -221,6 +236,9 @@ fingerprint_entries(Path, Root) ->
 
 relative_path(Path, Root) ->
     lists:nthtail(length(Root) + 1, Path).
+
+absolute(Path) ->
+    filename:absname(Path).
 
 ensure_directory(Path) ->
     filelib:ensure_dir(filename:join(Path, ".keep")).

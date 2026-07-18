@@ -1,6 +1,6 @@
 """Explicit local-only Mix workflows for servers, reloaders, and generators."""
 
-load("//private:beam_info.bzl", "ErlangAppInfo", "crypto_exec_inputs", "crypto_exec_tools", "erl_env_flags", "fips_erl_args", "otp_runtime_env", "path_join", "runtime_path_erl_args", "test_erl_launcher")
+load("//private:beam_info.bzl", "ErlangAppInfo", "crypto_exec_inputs", "crypto_exec_tools", "crypto_runtime_files", "erl_env_flags", "fips_erl_args", "otp_runtime_env", "path_join", "runtime_path_erl_args", "test_erl_launcher")
 load("//private:mix_execution.bzl", "MIX_EVAL", "validate_user_env")
 load("//private:mix_info.bzl", "MixProjectInfo")
 
@@ -11,7 +11,7 @@ def _local_state_name(ctx):
     value = str(ctx.label).replace("@", "").replace("//", "").replace(":", "/")
     return value[1:] if value.startswith("/") else value
 
-def _local_bootstrap_expression(ctx):
+def _local_bootstrap_expression(ctx, manifest):
     state_name = _local_state_name(ctx)
     statements = [
         'W=os:getenv("BUILD_WORKSPACE_DIRECTORY")',
@@ -19,6 +19,7 @@ def _local_bootstrap_expression(ctx):
         'S=filename:join([W,".bazel","elixir_mix",{}])'.format(_erl_string(state_name)),
         'true=os:putenv("RULES_ELIXIR_MIX_LOCAL_STATE",S)',
         'true=os:putenv("RULES_ELIXIR_MIX_CRYPTO_STATE",filename:join(S,"crypto"))',
+        'true=os:putenv("RULES_ELIXIR_MIX_LOCAL_STAGE_MANIFEST",filename:absname({}))'.format(_erl_string(manifest.short_path)),
     ]
     return "begin " + ",".join(statements + ["ok"]) + " end."
 
@@ -68,12 +69,27 @@ def _local_stage_manifest(ctx, app, dependencies, project_root):
                 "{%s,%s}" % (_erl_string(entry.source.short_path), _erl_string(entry.destination)),
             )
 
+    context_fingerprint = ctx.actions.declare_file(ctx.label.name + "_local_context.fingerprint")
+    context_lines = [
+        "schema=2",
+        "mode=" + ctx.attr.mode,
+        "task=" + ctx.attr.task,
+        "mix_env=" + ctx.attr.mix_env,
+        "otp=" + ctx.toolchains["//:toolchain_type"].otpinfo.version,
+        "elixir=" + ctx.toolchains["//:toolchain_type"].elixirinfo.version,
+    ] + [
+        "task_arg:{}:{}".format(len(value), value)
+        for value in ctx.attr.task_args
+    ] + ["env:{}={}".format(key, ctx.attr.env[key]) for key in sorted(ctx.attr.env.keys())]
+    ctx.actions.write(context_fingerprint, "\n".join(context_lines) + "\n")
+
     manifest = ctx.actions.declare_file(ctx.label.name + "_local_stage.config")
     ctx.actions.write(
         output = manifest,
-        content = "#{state_name=>%s,project_root=>%s,dependencies=>[%s],application=>#{app_name=>%s,compile_fingerprint=>%s,project_fingerprint=>%s,project_entries=>[%s]}}.\n" % (
+        content = "#{state_name=>%s,project_root=>%s,context_fingerprint=>%s,dependencies=>[%s],application=>#{app_name=>%s,compile_fingerprint=>%s,project_fingerprint=>%s,project_entries=>[%s]}}.\n" % (
             _erl_string(_local_state_name(ctx)),
             _erl_string(project_root),
+            _erl_string(context_fingerprint.short_path),
             ",".join(dependency_terms),
             _erl_string(app.app_name),
             _erl_string(app.compile_fingerprint.short_path),
@@ -81,7 +97,7 @@ def _local_stage_manifest(ctx, app, dependencies, project_root):
             ",".join(application_project_entries),
         ),
     )
-    return manifest, [
+    return manifest, context_fingerprint, [
         entry.source
         for entry in app.project_entries
         if entry.source.short_path != project_prefix + entry.destination
@@ -145,12 +161,12 @@ def _mix_local_impl(ctx):
     project_root = project.mix_config.short_path.rsplit("/", 1)[0] if "/" in project.mix_config.short_path else ""
     if project_root.startswith("../"):
         fail("local workflows require a Mix project in the main workspace")
-    manifest, application_project_files = _local_stage_manifest(ctx, app, dependencies, project_root)
+    manifest, context_fingerprint, application_project_files = _local_stage_manifest(ctx, app, dependencies, project_root)
     driver = _compile_local_driver(ctx, toolchain.otpinfo)
     driver_runfiles_dir = driver.short_path.rsplit("/", 1)[0]
     prefix = runtime_path_erl_args() + [
         "-eval",
-        _local_bootstrap_expression(ctx),
+        _local_bootstrap_expression(ctx, manifest),
         "-noshell",
         "+fnu",
     ] + fips_erl_args(toolchain.otpinfo, runfiles = True) + [
@@ -160,6 +176,8 @@ def _mix_local_impl(ctx):
         "mix_local_driver:stage(filename:absname({}))".format(_erl_string(manifest.short_path)),
         "-eval",
         _local_preload_expression(project.mix_config.basename),
+        "-eval",
+        "begin M=os:getenv(\"RULES_ELIXIR_MIX_LOCAL_STAGE_MANIFEST\"),true=is_list(M),'Elixir.System':at_exit(fun(_Status)->mix_local_driver:cleanup(M) end) end.",
     ]
     if ctx.attr.mode == "mix":
         if not ctx.attr.task:
@@ -231,8 +249,11 @@ def _mix_local_impl(ctx):
         if dependency[ErlangAppInfo].project_fingerprint
     ])
     runfiles = ctx.runfiles(
-        files = [manifest, driver] + application_project_files + [file for dependency in dependencies for file in dependency[ErlangAppInfo].project_files] + fingerprint_files,
-        transitive_files = toolchain.runtime_files,
+        files = [manifest, context_fingerprint, driver] + application_project_files + [file for dependency in dependencies for file in dependency[ErlangAppInfo].project_files] + fingerprint_files,
+        transitive_files = depset(transitive = [
+            toolchain.runtime_files,
+            crypto_runtime_files(toolchain.otpinfo),
+        ]),
     ).merge(ctx.attr.lib[DefaultInfo].default_runfiles)
     for dependency in dependencies:
         runfiles = runfiles.merge(dependency[DefaultInfo].default_runfiles)

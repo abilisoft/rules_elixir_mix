@@ -416,11 +416,15 @@ def _mix_wallaby_test_impl(name, visibility, chrome, chromedriver, env, tools, *
         "WALLABY_CHROMEDRIVER": "$(location {})".format(chromedriver),
         "WALLABY_DRIVER": "chrome",
     })
+    wallaby_tools = []
+    for tool in tools + [chrome, chromedriver]:
+        if tool not in wallaby_tools:
+            wallaby_tools.append(tool)
     mix_test(
         name = name,
         visibility = visibility,
         env = wallaby_env,
-        tools = tools + [chrome, chromedriver],
+        tools = wallaby_tools,
         **kwargs
     )
 

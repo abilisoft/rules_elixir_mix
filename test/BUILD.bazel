@@ -24,6 +24,7 @@ load(
     "mix_release",
     "mix_test",
     "mix_typecheck_test",
+    "mix_wallaby_test",
     "mix_xref_test",
     "otp_crypto_sdk",
     "otp_prebuilt_release",
@@ -33,6 +34,8 @@ load(
 load(":analysis_tests.bzl", "fake_directory", "fake_executable", "generated_file", "mix_lock_analysis_check", "toolchain_analysis_check")
 
 package(default_visibility = ["//visibility:public"])
+
+exports_files(["src/artifact_normalizer_tests.erl"])
 
 filegroup(
     name = "otp_files",
@@ -82,6 +85,8 @@ toolchain(
 )
 
 fake_executable(name = "fake_activation")
+
+fake_executable(name = "fake_chromedriver")
 
 fake_directory(name = "fake_crypto_sysroot")
 
@@ -376,6 +381,18 @@ mix_ecto_test(
     tags = ["manual"],
 )
 
+mix_wallaby_test(
+    name = "wallaby_analysis_fixture",
+    srcs = [
+        "test/analysis_fixture_test.exs",
+        "test/test_helper.exs",
+    ],
+    chrome = ":fake_activation",
+    chromedriver = ":fake_chromedriver",
+    lib = ":analysis_test_lib",
+    tags = ["manual"],
+)
+
 mix_lcov_test(
     name = "lcov_analysis_fixture",
     srcs = [
@@ -457,23 +474,12 @@ mix_test(
 erlang_common_test(
     name = "common_test_analysis_fixture",
     apps = [":erlang_analysis_fixture"],
+    config = ["common_test.config"],
+    groups = ["values"],
+    repeat = 2,
+    suite_data = {
+        "fixtures/analysis_fixture_SUITE_data/payload.txt": "analysis_fixture_SUITE/payload.txt",
+    },
     suites = ["analysis_fixture_SUITE"],
-    tags = ["manual"],
-)
-
-erlang_app(
-    name = "artifact_normalizer_test_app",
-    srcs = [
-        "src/artifact_normalizer_tests.erl",
-        "//private:artifact_normalizer.erl",
-    ],
-    app_name = "artifact_normalizer_test_app",
-    tags = ["manual"],
-    version = "0.1.0",
-)
-
-erlang_eunit_test(
-    name = "artifact_normalizer_test",
-    apps = [":artifact_normalizer_test_app"],
     tags = ["manual"],
 )

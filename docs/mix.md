@@ -18,6 +18,9 @@ Important attributes:
 - `data`: templates and files read while evaluating/compiling the project.
 - `priv`: runtime application files and generated assets.
 - `compile_deps`: dependencies visible only while compiling this application.
+- `type_deps`: compile-only dependencies whose remote types are referenced by
+  this application. Dialyzer includes this closure but excludes unrelated
+  build tools that may intentionally omit debug information.
 - `runtime_deps`: dependencies propagated into the runtime application graph.
 - `deps`: compatibility spelling for `runtime_deps`.
 - `mix_env`: `prod`, `dev`, or `test`.

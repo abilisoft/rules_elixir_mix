@@ -139,6 +139,9 @@ def _mix_release_impl(ctx):
         "RULES_ELIXIR_MIX_RELEASE_ROOT": release_dir.path,
         "RULES_ELIXIR_MIX_REMOVE_BUILD_ROOT": "true",
     }
+    if ctx.attr.protocols:
+        internal_env["RULES_ELIXIR_MIX_CONSOLIDATE_PROTOCOLS"] = "true"
+        internal_env["RULES_ELIXIR_MIX_RELEASE_PROTOCOLS"] = ctx.attr.protocols[ElixirProtocolInfo].directory.path
     if fips_required:
         files.append(ctx.file._crypto_release_enforcement)
         internal_env.update({

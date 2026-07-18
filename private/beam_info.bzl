@@ -15,6 +15,7 @@ ErlangAppInfo = provider(
         "direct_compile_deps": "Direct compile-only application dependencies.",
         "direct_deps": "Compatibility alias for direct runtime dependencies.",
         "direct_runtime_deps": "Direct runtime application dependencies.",
+        "direct_type_deps": "Direct compile-only applications whose types are referenced by this application.",
         "extra_apps": "Additional OTP runtime applications.",
         "include": "Public Erlang header files.",
         "license_files": "License files propagated with the application.",
@@ -24,6 +25,7 @@ ErlangAppInfo = provider(
         "project_fingerprint": "Declared source-project fingerprint, or None when no project is staged.",
         "project_root_short_path": "Runfiles-relative source-project root, or an empty string.",
         "runtime_deps": "Depset of transitive runtime application dependencies.",
+        "type_deps": "Depset of applications needed to analyze this application's types.",
         "srcs": "Declared source files.",
     },
 )
@@ -242,6 +244,17 @@ def crypto_exec_tools(otp_info):
     sdk = otp_info.crypto_sdk
     return [sdk.activation_exec_tool] if sdk and sdk.activation_exec_tool else []
 
+def crypto_runtime_files(otp_info):
+    """Return target-configured crypto deployment files needed at runtime.
+
+    Fully static SDKs deliberately contribute nothing: their sysroot is a
+    build input, not release payload. Provider-backed SDKs need the normalized
+    target-configured SDK closure because their early activation expression
+    references both the sysroot and the activation executable through runfiles.
+    """
+    sdk = otp_info.crypto_sdk
+    return sdk.files if sdk and sdk.activation_tool else depset()
+
 def otp_runtime_env(otp_info, runfiles = False):
     """Return the environment required to invoke erlexec directly.
 
@@ -311,6 +324,10 @@ def runtime_depset(deps):
     """Build a nested runtime-dependency depset without flattening its graph."""
     return _dependency_set(deps, "runtime_deps")
 
+def type_depset(deps):
+    """Build a nested type-dependency depset without flattening its graph."""
+    return _dependency_set(deps, "type_deps")
+
 def flat_compile_deps(deps):
     """Return the stable closure needed to compile against `deps`.
 
@@ -332,6 +349,14 @@ def flat_runtime_deps(deps):
       Stable, application-name-deduplicated targets.
     """
     return _flatten(deps, "runtime_deps")
+
+def flat_type_deps(deps):
+    """Return the stable closure needed to analyze types for `deps`.
+
+    Unlike compile_deps, this excludes build-only tools that may deliberately
+    ship BEAMs without debug information.
+    """
+    return _flatten(deps, "type_deps")
 
 def flat_deps(deps):
     """Compatibility alias for flat_runtime_deps.

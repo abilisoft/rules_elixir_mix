@@ -2,7 +2,7 @@
 -module(artifact_normalizer).
 -export([normalize_tree/3, normalize_beams/3, prune_script_launchers/1,
          scrub_erts_build_metadata/1, scrub_erts_commandline_flags/1,
-         assert_absent/2]).
+         assert_absent/2, assert_beams_absent/2]).
 
 -include_lib("kernel/include/file.hrl").
 
@@ -58,6 +58,15 @@ scrub_erts_build_metadata(SourceRoot) ->
 assert_absent(Root, Prefixes0) ->
     Prefixes = [iolist_to_binary(Prefix) || Prefix <- Prefixes0],
     walk(Root, fun(Path) -> assert_file_absent(Path, Prefixes) end).
+
+assert_beams_absent(Root, Prefixes0) ->
+    Prefixes = [iolist_to_binary(Prefix) || Prefix <- Prefixes0],
+    walk(Root, fun(Path) ->
+        case filename:extension(Path) of
+            ".beam" -> assert_file_absent(Path, Prefixes);
+            _ -> ok
+        end
+    end).
 
 walk(Path, Function) ->
     case file:read_link_info(Path) of

@@ -1,4 +1,4 @@
--module(analysis_fixture_SUITE).
+-module(direct_fixture_SUITE).
 -export([all/0, groups/0, value/1]).
 
 all() ->
@@ -8,7 +8,7 @@ groups() ->
     [{values, [], [value]}].
 
 value(Config) ->
-    ok = analysis_fixture:value(),
+    ok = direct_fixture:value(),
     configured = ct:get_config(expected_config),
     DataDir = proplists:get_value(data_dir, Config),
     {ok, <<"declared suite data\n">>} = file:read_file(filename:join(DataDir, "payload.txt")),

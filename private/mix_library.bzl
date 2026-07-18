@@ -1,11 +1,11 @@
 """Shell-free rules for compiling Mix projects."""
 
-load("//private:beam_info.bzl", "ErlangAppInfo", "compile_depset", "flat_compile_deps", "path_join", "runtime_depset")
+load("//private:beam_info.bzl", "ErlangAppInfo", "compile_depset", "flat_compile_deps", "path_join", "runtime_depset", "type_depset")
 load("//private:elixir_priv.bzl", "ElixirPrivInfo")
 load("//private:elixir_source.bzl", "ElixirSourceInfo")
 load("//private:mix_execution.bzl", "run_mix_action")
 load("//private:mix_info.bzl", "MixProjectInfo")
-load("//private:native_build.bzl", "native_build_context", "use_native_cc_toolchain")
+load("//private:native_build.bzl", "NATIVE_EXEC_GROUP", "native_build_context", "use_native_cc_toolchain")
 
 _MixCompileInfo = provider(
     doc = "Internal result of a Mix compile action.",
@@ -159,6 +159,7 @@ def _mix_compile_impl(ctx):
 
     internal_env = {
         "RULES_ELIXIR_MIX_APP": ctx.attr.app_name,
+        "RULES_ELIXIR_MIX_ARTIFACT_NORMALIZER": ctx.file._artifact_normalizer.path,
         "RULES_ELIXIR_MIX_BUILD_ROOT": build_root.path,
         "RULES_ELIXIR_MIX_COMPILE_FINGERPRINT": fingerprint.path,
         "RULES_ELIXIR_MIX_PROJECT_FINGERPRINT": project_fingerprint.path,
@@ -186,8 +187,8 @@ def _mix_compile_impl(ctx):
         mix_config = ctx.file.mix_config,
         mix_env = ctx.attr.mix_env,
         build_root = build_root.path,
-        deps = flat_compile_deps(ctx.attr.compile_deps + ctx.attr.runtime_deps),
-        inputs = source_files + generated_files + ctx.files.include + ctx.files.precompiled_native_artifacts + [entry.source for entry in priv_entries] + project_files + ([priv_manifest] if priv_manifest else []) + ([include_manifest] if include_manifest else []) + ([precompiled_native_manifest] if precompiled_native_manifest else []),
+        deps = flat_compile_deps(ctx.attr.compile_deps + ctx.attr.type_deps + ctx.attr.runtime_deps),
+        inputs = source_files + generated_files + ctx.files.include + ctx.files.precompiled_native_artifacts + [entry.source for entry in priv_entries] + project_files + [ctx.file._artifact_normalizer] + ([priv_manifest] if priv_manifest else []) + ([include_manifest] if include_manifest else []) + ([precompiled_native_manifest] if precompiled_native_manifest else []),
         project_inputs = source_files + generated_files + ctx.files.include + ctx.files.priv + project_files,
         project_entries = generated_entries,
         outputs = [build_root, fingerprint, project_fingerprint],
@@ -195,6 +196,8 @@ def _mix_compile_impl(ctx):
         user_env = env,
         action_inputs = native.inputs if native else None,
         action_tools = native.tools if native else [],
+        action_execution_requirements = native.execution_requirements if native else {},
+        exec_group = NATIVE_EXEC_GROUP if native else None,
         mnemonic = "MIXCOMPILE",
     )
 
@@ -221,6 +224,7 @@ def _mix_compile_attrs():
         "data": attr.label_list(allow_files = True),
         "compile_deps": attr.label_list(providers = [ErlangAppInfo]),
         "runtime_deps": attr.label_list(providers = [ErlangAppInfo]),
+        "type_deps": attr.label_list(providers = [ErlangAppInfo]),
         "priv": attr.label_list(allow_files = True),
         "priv_entries": attr.label_list(providers = [ElixirPrivInfo]),
         "include": attr.label_list(allow_files = [".hrl"]),
@@ -232,6 +236,10 @@ def _mix_compile_attrs():
         "native_make_jobs": attr.int(default = 4),
         "precompiled_native_artifacts": attr.label_list(allow_files = True),
         "warnings_as_errors": attr.bool(default = True),
+        "_artifact_normalizer": attr.label(
+            default = Label("//private:artifact_normalizer.erl"),
+            allow_single_file = [".erl"],
+        ),
     }
 
 _mix_compile = rule(
@@ -244,7 +252,11 @@ _mix_native_compile = rule(
     implementation = _mix_compile_impl,
     attrs = _mix_compile_attrs(),
     fragments = ["cpp"],
-    toolchains = ["//:toolchain_type"] + use_native_cc_toolchain(),
+    exec_groups = {
+        NATIVE_EXEC_GROUP: exec_group(
+            toolchains = ["//:toolchain_type"] + use_native_cc_toolchain(),
+        ),
+    },
 )
 
 def _mix_library_info_impl(ctx):
@@ -271,8 +283,9 @@ def _mix_library_info_impl(ctx):
     for dep in ctx.attr.runtime_deps:
         runfiles = runfiles.merge(dep[DefaultInfo].default_runfiles)
 
-    compile_deps = compile_depset(ctx.attr.compile_deps + ctx.attr.runtime_deps)
+    compile_deps = compile_depset(ctx.attr.compile_deps + ctx.attr.type_deps + ctx.attr.runtime_deps)
     runtime_deps = runtime_depset(ctx.attr.runtime_deps)
+    type_deps = type_depset(ctx.attr.type_deps + ctx.attr.runtime_deps)
 
     return [
         DefaultInfo(
@@ -299,6 +312,7 @@ def _mix_library_info_impl(ctx):
             direct_compile_deps = ctx.attr.compile_deps,
             direct_deps = ctx.attr.runtime_deps,
             direct_runtime_deps = ctx.attr.runtime_deps,
+            direct_type_deps = ctx.attr.type_deps,
             extra_apps = [],
             include = ctx.files.include,
             license_files = [],
@@ -308,6 +322,7 @@ def _mix_library_info_impl(ctx):
             project_fingerprint = ctx.attr.compile[_MixCompileInfo].project_fingerprint,
             project_root_short_path = ctx.file.mix_config.short_path.rsplit("/", 1)[0] if "/" in ctx.file.mix_config.short_path else "",
             runtime_deps = runtime_deps,
+            type_deps = type_deps,
             srcs = source_files + generated_files + ctx.files.config,
         ),
     ]
@@ -324,6 +339,7 @@ _mix_library_info = rule(
         "generated_srcs": attr.label_list(providers = [ElixirSourceInfo]),
         "compile_deps": attr.label_list(providers = [ErlangAppInfo]),
         "runtime_deps": attr.label_list(providers = [ErlangAppInfo]),
+        "type_deps": attr.label_list(providers = [ErlangAppInfo]),
         "srcs": attr.label_list(allow_files = [".ex", ".exs", ".erl", ".xrl", ".yrl", ".hrl", ".app.src"]),
         "priv": attr.label_list(allow_files = True),
         "priv_entries": attr.label_list(providers = [ElixirPrivInfo]),
@@ -366,6 +382,7 @@ def _mix_library_impl(name, visibility, **kwargs):
         "priv": kwargs["priv"],
         "priv_entries": kwargs["priv_entries"],
         "runtime_deps": kwargs["runtime_deps"],
+        "type_deps": kwargs["type_deps"],
     })
     info_args = {key: value for key, value in kwargs.items() if key in info_keys + common_keys}
     info_args.update({
@@ -374,6 +391,7 @@ def _mix_library_impl(name, visibility, **kwargs):
         "priv": kwargs["priv"],
         "priv_entries": kwargs["priv_entries"],
         "runtime_deps": kwargs["runtime_deps"],
+        "type_deps": kwargs["type_deps"],
     })
     if kwargs["lockfile"]:
         compile_args["lockfile"] = kwargs["lockfile"]
@@ -416,6 +434,11 @@ mix_library = macro(
             providers = [ErlangAppInfo],
             configurable = False,
             doc = "Direct applications propagated into the runtime closure.",
+        ),
+        "type_deps": attr.label_list(
+            providers = [ErlangAppInfo],
+            configurable = False,
+            doc = "Compile-only applications whose remote types are referenced by this application.",
         ),
         "tags": attr.string_list(configurable = False),
     },

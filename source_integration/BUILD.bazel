@@ -1,0 +1,22 @@
+constraint_setting(
+    name = "runtime_abi",
+    default_constraint_value = ":source_runtime_abi",
+)
+
+constraint_value(
+    name = "source_runtime_abi",
+    constraint_setting = ":runtime_abi",
+    visibility = ["//visibility:public"],
+)
+
+platform(
+    name = "source_platform",
+    constraint_values = [
+        ":source_runtime_abi",
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    exec_properties = {
+        "container-image": "docker://hexpm/elixir@sha256:50b4199b1b892d140add53647af4c8e593c441ee8320f168f5eb66a5032d7379",
+    },
+)

@@ -1,6 +1,6 @@
 """Shell-free boot test for a Mix release artifact."""
 
-load("//private:beam_info.bzl", "erl_env_flags", "fips_erl_args", "otp_runtime_env", "runtime_path_erl_args", "test_erl_launcher")
+load("//private:beam_info.bzl", "crypto_runtime_files", "erl_env_flags", "fips_erl_args", "otp_runtime_env", "runtime_path_erl_args", "test_erl_launcher")
 load("//private:release_info.bzl", "ReleaseInfo")
 
 _DRIVER_EVAL = "A=init:get_plain_arguments(),[S|R]=A,C=compile:file(S,[binary,report_errors,report_warnings]),M=element(2,C),B=element(3,C),{module,M}=code:load_binary(M,S,B),M:main(R),halt()."
@@ -21,7 +21,10 @@ def _elixir_release_test_impl(ctx):
     release_root = release_files[0]
     for path in ctx.attr.required_paths:
         _validate_required_path(path)
+    for path in ctx.attr.required_file_contents:
+        _validate_required_path(path)
     crypto_environment_keys = sorted(otp.crypto_sdk.runtime_environment.keys()) if otp.crypto_sdk else []
+    required_file_contents = sorted(ctx.attr.required_file_contents.items())
     args = runtime_path_erl_args() + [
         "-noshell",
     ] + fips_erl_args(otp, runfiles = True) + [
@@ -33,11 +36,22 @@ def _elixir_release_test_impl(ctx):
         release.name,
         release.app_name,
         "true" if release.crypto_activation else "false",
+        "true" if release.fips == "required" else "false",
         str(len(crypto_environment_keys)),
-    ] + crypto_environment_keys + ctx.attr.required_paths
+        str(len(ctx.attr.required_paths)),
+        str(len(required_file_contents)),
+        str(len(ctx.attr.consolidated_protocols)),
+    ] + crypto_environment_keys + ctx.attr.required_paths + [
+        value
+        for pair in required_file_contents
+        for value in pair
+    ] + ctx.attr.consolidated_protocols
     runfiles = ctx.runfiles(
         files = [ctx.file._driver, release_root],
-        transitive_files = toolchain.runtime_files,
+        transitive_files = depset(transitive = [
+            toolchain.runtime_files,
+            crypto_runtime_files(otp),
+        ]),
     ).merge(ctx.attr.release[DefaultInfo].default_runfiles)
     environment = otp_runtime_env(otp, runfiles = True)
     environment.update({
@@ -56,6 +70,8 @@ elixir_release_test = rule(
     implementation = _elixir_release_test_impl,
     attrs = {
         "release": attr.label(mandatory = True, providers = [ReleaseInfo]),
+        "consolidated_protocols": attr.string_list(),
+        "required_file_contents": attr.string_dict(),
         "required_paths": attr.string_list(),
         "_driver": attr.label(
             default = Label("//private:release_runtime_test.erl"),

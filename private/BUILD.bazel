@@ -1,6 +1,7 @@
 exports_files([
     "mix_local_driver.erl",
     "artifact_normalizer.erl",
+    "common_test_driver.erl",
     "crypto_release_activation.exs",
     "crypto_release_enforcement.exs",
     "elixir_build_driver.erl",

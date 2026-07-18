@@ -1,12 +1,13 @@
 """Hermetic OTP source build using explicit tools and an Erlang driver."""
 
-load("@rules_cc//cc:action_names.bzl", "CPP_COMPILE_ACTION_NAME", "CPP_LINK_EXECUTABLE_ACTION_NAME", "CPP_LINK_STATIC_LIBRARY_ACTION_NAME", "C_COMPILE_ACTION_NAME", "STRIP_ACTION_NAME")
-load("@rules_cc//cc:find_cc_toolchain.bzl", "find_cc_toolchain", "use_cc_toolchain")
+load("@rules_cc//cc:action_names.bzl", "CPP_COMPILE_ACTION_NAME", "CPP_LINK_DYNAMIC_LIBRARY_ACTION_NAME", "CPP_LINK_EXECUTABLE_ACTION_NAME", "CPP_LINK_STATIC_LIBRARY_ACTION_NAME", "C_COMPILE_ACTION_NAME", "STRIP_ACTION_NAME")
+load("@rules_cc//cc:find_cc_toolchain.bzl", "CC_TOOLCHAIN_TYPE", "use_cc_toolchain")
 load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
 load("//private:beam_info.bzl", "OtpInfo", "otp_runtime_env")
 load("//private:otp_crypto_sdk.bzl", "crypto_sdk_info")
 
 _DRIVER_EVAL = "A=init:get_plain_arguments(),[N,S|R]=A,{ok,artifact_normalizer,NB}=compile:file(N,[binary,report_errors,report_warnings]),{module,artifact_normalizer}=code:load_binary(artifact_normalizer,N,NB),C=compile:file(S,[binary,report_errors,report_warnings]),M=element(2,C),B=element(3,C),{module,M}=code:load_binary(M,S,B),M:main(R),halt()."
+_OTP_BUILD_EXEC_GROUP = "otp_build"
 
 def _erl_string(value):
     return '"{}"'.format(
@@ -72,6 +73,33 @@ def _dedupe(values):
             result.append(value)
     return result
 
+def _cc_toolchain(ctx):
+    toolchain = ctx.exec_groups[_OTP_BUILD_EXEC_GROUP].toolchains[CC_TOOLCHAIN_TYPE]
+    if hasattr(toolchain, "cc_provider_in_toolchain") and hasattr(toolchain, "cc"):
+        return toolchain.cc
+    return toolchain
+
+def _merge_environment(base, fragments):
+    result = dict(base)
+    for fragment in fragments:
+        for key, value in fragment.items():
+            if key in result and result[key] != value:
+                fail("C/C++ toolchain action environments disagree on {}: '{}' versus '{}'".format(key, result[key], value))
+            result[key] = value
+    return result
+
+def _execution_requirements(feature_configuration, action_names):
+    result = {"block-network": "1"}
+    for action_name in action_names:
+        for requirement in cc_common.get_execution_requirements(
+            action_name = action_name,
+            feature_configuration = feature_configuration,
+        ):
+            if requirement == "block-network":
+                continue
+            result[requirement] = ""
+    return result
+
 def _validate_configure_options(options):
     owned = [
         "--disable-dynamic-ssl-lib",
@@ -91,17 +119,25 @@ def _validate_configure_options(options):
 def _validate_make_options(options):
     owned_variables = [
         "AR",
+        "ARFLAGS",
         "BINDIR",
         "CC",
         "CFLAGS",
         "CXX",
         "CXXFLAGS",
+        "DED_LD",
+        "DED_LD_FLAG_RUNTIME_LIBRARY_PATH",
+        "DED_LIBS",
+        "DED_LDFLAGS",
+        "DED_LDFLAGS_CONFTEST",
         "DESTDIR",
         "ERLC_EMULATOR",
         "ERL_COMPILER_OPTIONS",
         "ERL_DETERMINISTIC",
         "LD",
+        "LDEXECUTABLE",
         "LDFLAGS",
+        "LDSHARED",
         "LIBS",
         "GNUMAKEFLAGS",
         "MAKEFLAGS",
@@ -122,31 +158,120 @@ def _validate_make_options(options):
         if any([option == flag or option.startswith(flag + "=") for flag in forbidden_options]) or any([option.startswith(flag) for flag in attached_short_options]):
             fail("make_options may not override Make execution policy with '{}'".format(option))
 
-def _compile_flags(cc_toolchain, feature_configuration, action_name, user_flags, add_legacy_cxx_options = False):
+def _compile_configuration(cc_toolchain, feature_configuration, action_name, user_flags, add_legacy_cxx_options = False):
+    variables = cc_common.create_compile_variables(
+        add_legacy_cxx_options = add_legacy_cxx_options,
+        cc_toolchain = cc_toolchain,
+        feature_configuration = feature_configuration,
+    )
     flags = cc_common.get_memory_inefficient_command_line(
         action_name = action_name,
         feature_configuration = feature_configuration,
-        variables = cc_common.create_compile_variables(
-            add_legacy_cxx_options = add_legacy_cxx_options,
-            cc_toolchain = cc_toolchain,
-            feature_configuration = feature_configuration,
-        ),
+        variables = variables,
     )
-    return _dedupe(flags + user_flags)
+    return struct(
+        environment = cc_common.get_environment_variables(
+            action_name = action_name,
+            feature_configuration = feature_configuration,
+            variables = variables,
+        ),
+        flags = _dedupe(flags + user_flags),
+    )
 
-def _link_flags(cc_toolchain, feature_configuration, user_flags):
-    flags = cc_common.get_memory_inefficient_command_line(
-        action_name = CPP_LINK_EXECUTABLE_ACTION_NAME,
+def _link_configuration(cc_toolchain, feature_configuration, action_name, dynamic, user_flags):
+    variables = cc_common.create_link_variables(
+        cc_toolchain = cc_toolchain,
         feature_configuration = feature_configuration,
-        variables = cc_common.create_link_variables(
-            cc_toolchain = cc_toolchain,
+        is_linking_dynamic_library = dynamic,
+        is_using_linker = True,
+        must_keep_debug = False,
+    )
+    flags = cc_common.get_memory_inefficient_command_line(
+        action_name = action_name,
+        feature_configuration = feature_configuration,
+        variables = variables,
+    )
+    return struct(
+        environment = cc_common.get_environment_variables(
+            action_name = action_name,
             feature_configuration = feature_configuration,
-            is_linking_dynamic_library = False,
-            is_using_linker = True,
-            must_keep_debug = False,
+            variables = variables,
+        ),
+        flags = _dedupe(flags + user_flags),
+    )
+
+def _dynamic_runtime_library_path_flag(cc_toolchain, feature_configuration):
+    marker = "__rules_elixir_mix_runtime_library_directory__"
+    variables = cc_common.create_link_variables(
+        cc_toolchain = cc_toolchain,
+        feature_configuration = feature_configuration,
+        is_linking_dynamic_library = True,
+        is_using_linker = True,
+        must_keep_debug = False,
+        runtime_library_search_directories = depset([marker]),
+    )
+    flags = cc_common.get_memory_inefficient_command_line(
+        action_name = CPP_LINK_DYNAMIC_LIBRARY_ACTION_NAME,
+        feature_configuration = feature_configuration,
+        variables = variables,
+    )
+    matches = []
+    for index in range(len(flags)):
+        flag = flags[index]
+        if marker in flag:
+            prefix = flag.replace(marker, "")
+            if not prefix and index > 0:
+                prefix = flags[index - 1] + " "
+            if prefix and prefix not in matches:
+                matches.append(prefix)
+    if len(matches) > 1:
+        fail("C/C++ toolchain exposes ambiguous dynamic runtime-library path flags: {}".format(matches))
+    return matches[0] if matches else ""
+
+def _archive_configuration(cc_toolchain, feature_configuration):
+    output_marker = "__rules_elixir_mix_archive_output__"
+    variables = cc_common.create_link_variables(
+        cc_toolchain = cc_toolchain,
+        feature_configuration = feature_configuration,
+        is_using_linker = False,
+        output_file = output_marker,
+    )
+    return struct(
+        environment = cc_common.get_environment_variables(
+            action_name = CPP_LINK_STATIC_LIBRARY_ACTION_NAME,
+            feature_configuration = feature_configuration,
+            variables = variables,
+        ),
+        flags = _action_flags_without_io(cc_common.get_memory_inefficient_command_line(
+            action_name = CPP_LINK_STATIC_LIBRARY_ACTION_NAME,
+            feature_configuration = feature_configuration,
+            variables = variables,
+        ), [output_marker]),
+    )
+
+def _strip_configuration(cc_toolchain, feature_configuration):
+    variables = cc_common.create_compile_variables(
+        cc_toolchain = cc_toolchain,
+        feature_configuration = feature_configuration,
+    )
+    return struct(
+        environment = cc_common.get_environment_variables(
+            action_name = STRIP_ACTION_NAME,
+            feature_configuration = feature_configuration,
+            variables = variables,
         ),
     )
-    return _dedupe(flags + user_flags)
+
+def _action_flags_without_io(flags, markers):
+    result = []
+    io_option_names = ["-o", "--input", "--output"]
+    for flag in flags:
+        if any([marker in flag for marker in markers]):
+            if result and result[-1] in io_option_names:
+                result.pop()
+            continue
+        result.append(flag)
+    return _dedupe(result)
 
 def _partition_link_flags(flags):
     """Separate pre-object linker options from ordered post-object libraries."""
@@ -182,7 +307,7 @@ def _otp_source_release_impl(ctx):
             fail("FIPS-required OTP requires crypto_sdk")
         if not ctx.attr.static_crypto_nif:
             fail("FIPS-required OTP requires static_crypto_nif=True")
-    cc_toolchain = find_cc_toolchain(ctx)
+    cc_toolchain = _cc_toolchain(ctx)
     feature_configuration = cc_common.configure_features(
         ctx = ctx,
         cc_toolchain = cc_toolchain,
@@ -192,26 +317,43 @@ def _otp_source_release_impl(ctx):
     compiler = _tool_path(feature_configuration, C_COMPILE_ACTION_NAME)
     cxx = _tool_path(feature_configuration, CPP_COMPILE_ACTION_NAME)
     linker = _tool_path(feature_configuration, CPP_LINK_EXECUTABLE_ACTION_NAME)
+    dynamic_linker = _tool_path(feature_configuration, CPP_LINK_DYNAMIC_LIBRARY_ACTION_NAME)
     archiver = _tool_path(feature_configuration, CPP_LINK_STATIC_LIBRARY_ACTION_NAME)
     strip = _tool_path(feature_configuration, STRIP_ACTION_NAME)
-    cflags = _compile_flags(
+    c_compile = _compile_configuration(
         cc_toolchain,
         feature_configuration,
         C_COMPILE_ACTION_NAME,
         ctx.fragments.cpp.copts + ctx.fragments.cpp.conlyopts + ctx.attr.copts,
     )
-    cxxflags = _compile_flags(
+    cxx_compile = _compile_configuration(
         cc_toolchain,
         feature_configuration,
         CPP_COMPILE_ACTION_NAME,
         ctx.fragments.cpp.copts + ctx.fragments.cpp.cxxopts + ctx.attr.cxxopts,
         add_legacy_cxx_options = True,
     )
-    ldflags, libraries = _partition_link_flags(_link_flags(
+    executable_link = _link_configuration(
         cc_toolchain,
         feature_configuration,
+        CPP_LINK_EXECUTABLE_ACTION_NAME,
+        False,
         ctx.fragments.cpp.linkopts + ctx.attr.linkopts,
-    ))
+    )
+    dynamic_link = _link_configuration(
+        cc_toolchain,
+        feature_configuration,
+        CPP_LINK_DYNAMIC_LIBRARY_ACTION_NAME,
+        True,
+        ctx.fragments.cpp.linkopts + ctx.attr.linkopts,
+    )
+    dynamic_runtime_library_path_flag = _dynamic_runtime_library_path_flag(cc_toolchain, feature_configuration)
+    archive = _archive_configuration(cc_toolchain, feature_configuration)
+    strip_configuration = _strip_configuration(cc_toolchain, feature_configuration)
+    cflags = c_compile.flags
+    cxxflags = cxx_compile.flags
+    executable_ldflags, executable_libraries = _partition_link_flags(executable_link.flags)
+    dynamic_ldflags, dynamic_libraries = _partition_link_flags(dynamic_link.flags)
 
     install = ctx.actions.declare_directory(ctx.label.name + "_runtime")
     erts_bin = ctx.actions.declare_directory(ctx.label.name + "_erts_bin")
@@ -229,23 +371,38 @@ def _otp_source_release_impl(ctx):
         ctx.executable.make,
     ] + tool_files
     tool_paths.append(ctx.executable.perl)
-    path_directories = _path_directories(tool_paths + [compiler, cxx, linker, archiver, strip])
+    path_directories = _path_directories(tool_paths + [compiler, cxx, linker, dynamic_linker, archiver, strip])
 
-    environment = {
+    owned_environment = {
         "AR": "{path, " + _erl_string(archiver) + "}",
         "CC": "{path, " + _erl_string(compiler) + "}",
         "CXX": "{path, " + _erl_string(cxx) + "}",
-        "LD": "{path, " + _erl_string(cc_toolchain.ld_executable) + "}",
+        "LD": "{path, " + _erl_string(linker) + "}",
         "PATH": "{path_list, " + _term_list(path_directories) + "}",
         "SHELL": "{path, " + _erl_string(ctx.executable.bash.path) + "}",
         "CONFIG_SHELL": "{path, " + _erl_string(ctx.executable.bash.path) + "}",
         "STRIP": "{path, " + _erl_string(strip) + "}",
     }
     if cc_toolchain.nm_executable:
-        environment["NM"] = "{path, " + _erl_string(cc_toolchain.nm_executable) + "}"
+        owned_environment["NM"] = "{path, " + _erl_string(cc_toolchain.nm_executable) + "}"
     if cc_toolchain.objcopy_executable:
-        environment["OBJCOPY"] = "{path, " + _erl_string(cc_toolchain.objcopy_executable) + "}"
-    environment["PERL"] = "{path, " + _erl_string(ctx.executable.perl.path) + "}"
+        owned_environment["OBJCOPY"] = "{path, " + _erl_string(cc_toolchain.objcopy_executable) + "}"
+    owned_environment["PERL"] = "{path, " + _erl_string(ctx.executable.perl.path) + "}"
+    cc_environment = _merge_environment(
+        {},
+        [
+            c_compile.environment,
+            cxx_compile.environment,
+            executable_link.environment,
+            dynamic_link.environment,
+            archive.environment,
+            strip_configuration.environment,
+        ],
+    )
+    environment = _merge_environment(owned_environment, [{
+        key: _erl_string(value)
+        for key, value in cc_environment.items()
+    }])
     environment_term = "#{{{}}}".format(", ".join([
         "{} => {}".format(_erl_string(key), environment[key])
         for key in sorted(environment.keys())
@@ -259,6 +416,7 @@ def _otp_source_release_impl(ctx):
         "  bootstrap_erts_bin => {}".format(_erl_string(bootstrap.erts_bin)),
         "  bootstrap_root => {}".format(_erl_string(bootstrap.erlang_home)),
         "  cflags => {}".format(_term_list(cflags)),
+        "  arflags => {}".format(_term_list(archive.flags)),
         "  configure_options => {}".format(_term_list(configure_options)),
         "  crypto_activation_args => {}".format(_term_list(crypto.activation_args) if crypto else "[]"),
         "  crypto_activation_tool => {}".format(_erl_string(crypto.activation_exec_tool.executable.path) if crypto and crypto.activation_exec_tool else "none"),
@@ -274,8 +432,12 @@ def _otp_source_release_impl(ctx):
         "  erts_bin_output => {}".format(_erl_string(erts_bin.path)),
         "  fips_required => {}".format("true" if ctx.attr.fips == "required" else "false"),
         "  jobs => {}".format(ctx.attr.jobs),
-        "  ldflags => {}".format(_term_list(ldflags)),
-        "  libraries => {}".format(_term_list(libraries)),
+        "  ded_ld => {}".format(_erl_string(dynamic_linker)),
+        "  ded_ldflags => {}".format(_term_list(dynamic_ldflags)),
+        "  ded_libs => {}".format(_term_list(dynamic_libraries)),
+        "  ded_ld_runtime_library_path => {}".format(_erl_string(dynamic_runtime_library_path_flag)),
+        "  ldflags => {}".format(_term_list(executable_ldflags)),
+        "  libraries => {}".format(_term_list(executable_libraries)),
         "  make => {}".format(_erl_string(ctx.executable.make.path)),
         "  make_options => {}".format(_term_list(ctx.attr.make_options)),
         "  output => {}".format(_erl_string(install.path)),
@@ -321,10 +483,17 @@ def _otp_source_release_impl(ctx):
         tools = [ctx.attr.bash[DefaultInfo].files_to_run, ctx.attr.make[DefaultInfo].files_to_run, ctx.attr.perl[DefaultInfo].files_to_run] + ([crypto.activation_exec_tool] if crypto and crypto.activation_exec_tool else []),
         outputs = [install, erts_bin, erl],
         env = action_env,
-        execution_requirements = {"block-network": "1"},
+        execution_requirements = _execution_requirements(feature_configuration, [
+            C_COMPILE_ACTION_NAME,
+            CPP_COMPILE_ACTION_NAME,
+            CPP_LINK_DYNAMIC_LIBRARY_ACTION_NAME,
+            CPP_LINK_EXECUTABLE_ACTION_NAME,
+            CPP_LINK_STATIC_LIBRARY_ACTION_NAME,
+            STRIP_ACTION_NAME,
+        ]),
         mnemonic = "OTPBUILD",
         progress_message = "Building Erlang/OTP {} from source".format(ctx.attr.version),
-        toolchain = "@rules_cc//cc:toolchain_type",
+        exec_group = _OTP_BUILD_EXEC_GROUP,
         use_default_shell_env = False,
     )
 
@@ -354,12 +523,12 @@ otp_source_release = rule(
     attrs = {
         "version": attr.string(mandatory = True),
         "srcs": attr.label_list(mandatory = True, allow_files = True),
-        "bootstrap_otp": attr.label(mandatory = True, providers = [OtpInfo], cfg = "exec"),
-        "bash": attr.label(mandatory = True, executable = True, allow_files = True, cfg = "exec"),
-        "make": attr.label(mandatory = True, executable = True, allow_files = True, cfg = "exec"),
-        "posix_tools": attr.label_list(mandatory = True, allow_files = True, cfg = "exec"),
-        "perl": attr.label(mandatory = True, executable = True, allow_files = True, cfg = "exec"),
-        "crypto_sdk": attr.label(allow_files = True),
+        "bootstrap_otp": attr.label(mandatory = True, providers = [OtpInfo], cfg = config.exec(_OTP_BUILD_EXEC_GROUP)),
+        "bash": attr.label(mandatory = True, executable = True, allow_files = True, cfg = config.exec(_OTP_BUILD_EXEC_GROUP)),
+        "make": attr.label(mandatory = True, executable = True, allow_files = True, cfg = config.exec(_OTP_BUILD_EXEC_GROUP)),
+        "posix_tools": attr.label_list(mandatory = True, allow_files = True, cfg = config.exec(_OTP_BUILD_EXEC_GROUP)),
+        "perl": attr.label(mandatory = True, executable = True, allow_files = True, cfg = config.exec(_OTP_BUILD_EXEC_GROUP)),
+        "crypto_sdk": attr.label(allow_files = True, cfg = config.exec(_OTP_BUILD_EXEC_GROUP)),
         "fips": attr.string(default = "disabled", values = ["disabled", "required"]),
         "configure_options": attr.string_list(),
         "make_options": attr.string_list(),
@@ -379,5 +548,7 @@ otp_source_release = rule(
         ),
     },
     fragments = ["cpp"],
-    toolchains = use_cc_toolchain(),
+    exec_groups = {
+        _OTP_BUILD_EXEC_GROUP: exec_group(toolchains = use_cc_toolchain()),
+    },
 )

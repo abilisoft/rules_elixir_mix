@@ -98,6 +98,7 @@ def _elixir_bootstrap_app_impl(ctx):
             direct_compile_deps = [],
             direct_deps = [],
             direct_runtime_deps = [],
+            direct_type_deps = [],
             extra_apps = [],
             include = [],
             license_files = [],
@@ -107,6 +108,7 @@ def _elixir_bootstrap_app_impl(ctx):
             project_fingerprint = None,
             project_root_short_path = "",
             runtime_deps = depset(),
+            type_deps = depset(),
             srcs = ctx.files.srcs,
         ),
     ]

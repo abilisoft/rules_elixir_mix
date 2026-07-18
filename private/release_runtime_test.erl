@@ -2,11 +2,20 @@
 -module(release_runtime_test).
 -export([main/1]).
 
-main([ReleaseRoot0, ReleaseName, AppName, CryptoActivation0, CryptoEnvironmentCount0 | Rest]) ->
+main([ReleaseRoot0, ReleaseName, AppName, CryptoActivation0, FipsRequired0,
+      CryptoEnvironmentCount0, RequiredPathCount0, RequiredContentCount0,
+      ProtocolCount0 | Rest]) ->
     ReleaseRoot = filename:absname(ReleaseRoot0),
     CryptoActivation = list_to_existing_atom(CryptoActivation0),
+    FipsRequired = list_to_existing_atom(FipsRequired0),
     CryptoEnvironmentCount = list_to_integer(CryptoEnvironmentCount0),
-    {CryptoEnvironmentKeys, RequiredPaths} = lists:split(CryptoEnvironmentCount, Rest),
+    RequiredPathCount = list_to_integer(RequiredPathCount0),
+    RequiredContentCount = list_to_integer(RequiredContentCount0),
+    ProtocolCount = list_to_integer(ProtocolCount0),
+    {CryptoEnvironmentKeys, Rest1} = lists:split(CryptoEnvironmentCount, Rest),
+    {RequiredPaths, Rest2} = lists:split(RequiredPathCount, Rest1),
+    {RequiredContentArguments, ProtocolNames} = lists:split(RequiredContentCount * 2, Rest2),
+    ProtocolCount = length(ProtocolNames),
     TestRoot = filename:absname(os:getenv("TEST_TMPDIR", ".")),
     RuntimeState = filename:join(TestRoot, "release-runtime"),
     ok = ensure_directory(RuntimeState),
@@ -26,13 +35,33 @@ main([ReleaseRoot0, ReleaseName, AppName, CryptoActivation0, CryptoEnvironmentCo
         end,
         RequiredPaths
     ),
+    lists:foreach(
+        fun({Relative, Expected}) ->
+            {ok, ExpectedBinary} = file:read_file(filename:join(ReleaseRoot, Relative)),
+            ExpectedBinary = iolist_to_binary(Expected)
+        end,
+        pairs(RequiredContentArguments)
+    ),
     App = list_to_atom(AppName),
+    Protocols = [list_to_atom(Name) || Name <- ProtocolNames],
+    FipsEvaluation = case FipsRequired of
+        true ->
+            "{ok,_}=application:ensure_all_started(crypto),"
+            "enabled=crypto:info_fips(),#{link_type:=static}=crypto:info(),"
+            "32=byte_size(crypto:hash(sha256,<<\"rules_elixir_mix\">>)),"
+            "case catch crypto:hash(md5,<<\"must fail\">>) of {'EXIT',_}->ok;"
+            "Unexpected->erlang:error({prohibited_md5_succeeded,Unexpected}) end,";
+        false -> ""
+    end,
     Evaluation = lists:flatten(io_lib:format(
+        "~s"
+        "lists:foreach(fun(P)->true=P:'__protocol__'('consolidated?') end,~tp),"
         "{ok,_}=application:ensure_all_started(~tp),"
         "io:format(\"release-runtime-ok ~~tp~n\",[~tp]),halt().",
-        [App, App]
+        [FipsEvaluation, Protocols, App, App]
     )),
     Arguments = [
+        "+fnu",
         "-boot", StartBoot,
         "-boot_var", "RELEASE_LIB", filename:join(ReleaseRoot, "lib"),
         "-mode", "embedded",
@@ -80,6 +109,11 @@ main([ReleaseRoot0, ReleaseName, AppName, CryptoActivation0, CryptoEnvironmentCo
     end,
     ok.
 
+pairs([]) ->
+    [];
+pairs([Key, Value | Rest]) ->
+    [{Key, Value} | pairs(Rest)].
+
 ensure_directory(Path) ->
     filelib:ensure_path(filename:join(Path, "placeholder")),
     case file:make_dir(Path) of
@@ -107,5 +141,7 @@ await(Port, Chunks) ->
         {Port, {data, Data}} -> await(Port, [Data | Chunks]);
         {Port, {exit_status, 0}} -> iolist_to_binary(lists:reverse(Chunks));
         {Port, {exit_status, Status}} ->
-            erlang:error({release_runtime_failed, Status, iolist_to_binary(lists:reverse(Chunks))})
+            Output = iolist_to_binary(lists:reverse(Chunks)),
+            io:put_chars(standard_error, Output),
+            erlang:error({release_runtime_failed, Status})
     end.

@@ -1,0 +1,87 @@
+module(
+    name = "rules_elixir_mix_source_integration",
+    version = "0.0.0",
+    bazel_compatibility = [">=9.2.0"],
+)
+
+bazel_dep(name = "platforms", version = "1.1.0")
+bazel_dep(name = "rules_elixir_mix", version = "0.0.0")
+local_path_override(
+    module_name = "rules_elixir_mix",
+    path = "..",
+)
+
+new_local_repository = use_repo_rule(
+    "@bazel_tools//tools/build_defs/repo:local.bzl",
+    "new_local_repository",
+)
+
+new_local_repository(
+    name = "source_tools",
+    build_file_content = """
+package(default_visibility = ["//visibility:public"])
+exports_files(["bash", "make", "perl"])
+filegroup(
+    name = "posix_tools",
+    srcs = [
+        "awk", "basename", "cat", "chmod", "cmp", "cp", "cut", "date",
+        "dd", "dirname", "expr", "find", "getconf", "grep", "head",
+        "install", "ln", "mkdir", "mv", "printf", "pwd", "readlink",
+        "realpath", "rm", "sed", "sort", "tail", "touch", "tr", "uname",
+        "wc", "xargs",
+    ],
+)
+""",
+    path = "/usr/bin",
+)
+
+elixir_config = use_extension(
+    "@rules_elixir_mix//bzlmod:toolchains.bzl",
+    "elixir_config",
+)
+elixir_config.source_toolchain(
+    name = "otp29_elixir120_source",
+    bash = "@source_tools//:bash",
+    bootstrap_erlexec = "erts-17.0.3/bin/erlexec",
+    bootstrap_otp_sha256 = "959b4144e47d992aa6fd08a8f4d8b21d4a6ba36dd67a61490715140796a2f9f6",
+    bootstrap_otp_type = "tar.gz",
+    bootstrap_otp_url = "file:///tmp/rules-elixir-mix-ci-otp-container.tar.gz",
+    bootstrap_otp_version = "29.0.3",
+    bootstrap_version_marker = "releases/29/OTP_VERSION",
+    configure_options = [
+        "--disable-pgo",
+        "--disable-sctp",
+        "--without-javac",
+        "--without-odbc",
+        "--without-termcap",
+        "--without-wx",
+    ],
+    elixir_sha256 = "1a25bbf9a9016651fc332eecc02bb9681d0b8e722c2e256e73ddb88fbce6e6b0",
+    elixir_strip_prefix = "elixir-1.20.2",
+    elixir_type = "tar.gz",
+    elixir_url = "https://github.com/elixir-lang/elixir/archive/refs/tags/v1.20.2.tar.gz",
+    elixir_version = "1.20.2",
+    exec_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    jobs = 8,
+    make = "@source_tools//:make",
+    make_options = ["SKIP_APPLICATIONS=wx debugger observer et reltool"],
+    otp_sha256 = "edef13778a449490bc183134e442a955b134d69c56075d97765d8d4951d8d2bb",
+    otp_strip_prefix = "otp-OTP-29.0.3",
+    otp_type = "tar.gz",
+    otp_url = "https://github.com/erlang/otp/archive/refs/tags/OTP-29.0.3.tar.gz",
+    otp_version = "29.0.3",
+    perl = "@source_tools//:perl",
+    posix_tools = ["@source_tools//:posix_tools"],
+    runtime_abi = "//:source_runtime_abi",
+)
+use_repo(elixir_config, "elixir_config")
+
+register_toolchains(
+    "@elixir_config//otp29_elixir120_source:otp_toolchain",
+    "@elixir_config//otp29_elixir120_source:toolchain",
+)
+
+register_execution_platforms("//:source_platform")

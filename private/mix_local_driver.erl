@@ -1,6 +1,6 @@
 %% Writable local-workflow staging driven by a compact Bazel-generated manifest.
 -module(mix_local_driver).
--export([stage/1]).
+-export([stage/1, cleanup/1]).
 
 -include_lib("kernel/include/file.hrl").
 
@@ -16,6 +16,7 @@ stage(ManifestPath) ->
     MixEnvironment = required_environment("MIX_ENV"),
     ok = filelib:ensure_dir(filename:join(State, ".keep")),
     set_environment(State, Build, Project, MixEnvironment),
+    ContextStatus = stage_context(Config, State, Build, MixEnvironment),
     DependencyStatuses = [
         stage_dependency(Dependency, State, Build, MixEnvironment)
         || Dependency <- maps:get(dependencies, Config)
@@ -27,12 +28,37 @@ stage(ManifestPath) ->
         MixEnvironment,
         Project
     ),
-    ok = require_warm_cache(DependencyStatuses ++ [ApplicationStatus]),
+    ok = require_warm_cache([ContextStatus | DependencyStatuses] ++ [ApplicationStatus]),
     ok = file:set_cwd(Project),
     %% Local workflows deliberately leave the runfiles tree. Keep hostname
     %% lookup in the VM instead of using OTP's cwd-anchored inet_gethost helper.
     inet_db:set_lookup([dns, file]),
     ok.
+
+cleanup(ManifestPath) ->
+    {ok, [Config]} = file:consult(ManifestPath),
+    Workspace = required_environment("BUILD_WORKSPACE_DIRECTORY"),
+    Project = filename:join(Workspace, maps:get(project_root, Config)),
+    State = case os:getenv("RULES_ELIXIR_MIX_LOCAL_STATE") of
+        false -> filename:join([Workspace, ".bazel", "elixir_mix", maps:get(state_name, Config)]);
+        StatePath -> StatePath
+    end,
+    App = maps:get(app_name, maps:get(application, Config)),
+    Previous = filename:join([State, "generated_project_inputs", App]),
+    remove_previous_project_entries(Previous, Previous, Project).
+
+stage_context(Config, State, Build, MixEnvironment) ->
+    Fingerprint = absolute(maps:get(context_fingerprint, Config)),
+    Marker = filename:join([State, "context", MixEnvironment ++ ".fingerprint"]),
+    case same_file(Fingerprint, Marker) of
+        true -> warm;
+        false ->
+            ok = remove(filename:join(Build, MixEnvironment)),
+            ok = remove(filename:join([State, "compiled_inputs", MixEnvironment])),
+            ok = remove(filename:join([State, "local_app_inputs", MixEnvironment])),
+            ok = copy_marker(Fingerprint, Marker),
+            changed
+    end.
 
 set_environment(State, Build, Project, MixEnvironment) ->
     lists:foreach(
@@ -56,12 +82,12 @@ set_environment(State, Build, Project, MixEnvironment) ->
 
 stage_dependency(Dependency, State, Build, MixEnvironment) ->
     App = maps:get(app_name, Dependency),
-    CompiledMarker = filename:join([State, "compiled_inputs", App ++ ".fingerprint"]),
+    CompiledMarker = filename:join([State, "compiled_inputs", MixEnvironment, App ++ ".fingerprint"]),
     CompileFingerprint = absolute(maps:get(compile_fingerprint, Dependency)),
-    CompiledStatus = case same_file(CompileFingerprint, CompiledMarker) of
+    Destination = filename:join([Build, MixEnvironment, "lib", App]),
+    CompiledStatus = case same_file(CompileFingerprint, CompiledMarker) andalso filelib:is_dir(Destination) of
         true -> warm;
         false ->
-            Destination = filename:join([Build, MixEnvironment, "lib", App]),
             ok = remove(Destination),
             ok = copy_entry(absolute(maps:get(compiled_source, Dependency)), Destination),
             ok = copy_marker(CompileFingerprint, CompiledMarker),
@@ -95,12 +121,19 @@ stage_application(Application, State, Build, MixEnvironment, Project) ->
     App = maps:get(app_name, Application),
     CompileFingerprint = absolute(maps:get(compile_fingerprint, Application)),
     ProjectFingerprint = absolute(maps:get(project_fingerprint, Application)),
-    CompileMarker = filename:join([State, "local_app_inputs", App ++ ".compiled.fingerprint"]),
-    ProjectMarker = filename:join([State, "local_app_inputs", App ++ ".project.fingerprint"]),
-    CompileCurrent = same_file(CompileFingerprint, CompileMarker),
-    ProjectCurrent = same_file(ProjectFingerprint, ProjectMarker),
-    case CompileCurrent andalso ProjectCurrent of
-        true -> warm;
+    CompileMarker = filename:join([State, "local_app_inputs", MixEnvironment, App ++ ".compiled.fingerprint"]),
+    ProjectMarker = filename:join([State, "local_app_inputs", MixEnvironment, App ++ ".project.fingerprint"]),
+    CompileCurrent = same_file(CompileFingerprint, CompileMarker) andalso
+        filelib:is_dir(filename:join([Build, MixEnvironment, "lib", App])),
+    ProjectFingerprintCurrent = same_file(ProjectFingerprint, ProjectMarker),
+    ProjectCurrent = ProjectFingerprintCurrent andalso application_project_current(Application, State, Project),
+    case CompileCurrent andalso ProjectFingerprintCurrent of
+        true ->
+            case ProjectCurrent of
+                true -> ok;
+                false -> ok = stage_application_project(Application, State, Project)
+            end,
+            warm;
         false ->
             ok = remove(filename:join([Build, MixEnvironment, "lib", App])),
             case ProjectCurrent of
@@ -111,6 +144,16 @@ stage_application(Application, State, Build, MixEnvironment, Project) ->
             ok = copy_marker(ProjectFingerprint, ProjectMarker),
             changed
     end.
+
+application_project_current(Application, State, Project) ->
+    App = maps:get(app_name, Application),
+    Previous = filename:join([State, "generated_project_inputs", App]),
+    lists:all(
+        fun({_Source, Relative}) ->
+            same_file(filename:join(Previous, Relative), filename:join(Project, Relative))
+        end,
+        maps:get(project_entries, Application)
+    ).
 
 combine_status(warm, warm) -> warm;
 combine_status(_First, _Second) -> changed.
