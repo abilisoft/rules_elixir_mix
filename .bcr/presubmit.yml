@@ -1,0 +1,13 @@
+matrix:
+  bazel:
+    - 9.x
+
+tasks:
+  verify_targets:
+    name: Verify Starlark
+    platform: ubuntu2204
+    bazel: ${{ bazel }}
+    build_flags:
+      - --incompatible_strict_action_env
+    test_targets:
+      - "@rules_elixir_mix//:buildifier_test"

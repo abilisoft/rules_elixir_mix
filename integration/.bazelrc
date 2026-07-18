@@ -1,0 +1,1 @@
+build --platforms=//:ci_execution_platform

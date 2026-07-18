@@ -1,0 +1,26 @@
+rules_elixir_mix
+=============
+
+This repository is derived from and adapts work from:
+
+* Discord rules_elixir
+  https://github.com/discord/rules_elixir
+  Baseline inspected/adapted from commit c8b30e5
+  ("[mix_release] ensure priv/ is copied after compile/priv split (#27)").
+
+* RabbitMQ rules_elixir
+  https://github.com/rabbitmq/rules_elixir
+  Discord rules_elixir is a fork of RabbitMQ rules_elixir.
+
+* RabbitMQ rules_erlang
+  https://github.com/rabbitmq/rules_erlang
+  Provider, Rebar, and Erlang/OTP source-build patterns were inspected and
+  selectively adapted. It is not a Bazel or runtime dependency.
+
+The inherited rules_elixir code and license files are preserved under the
+upstream dual-license terms documented in LICENSE, LICENSE-APACHE2, and
+LICENSE-MPL-RabbitMQ.
+
+New modifications in this repository are licensed under Apache License 2.0
+unless a file states otherwise. Files copied or adapted from upstream retain
+their inherited notices and license obligations.

@@ -1,0 +1,64 @@
+module(
+    name = "rules_elixir_mix_integration",
+    version = "0.0.0",
+    bazel_compatibility = [">=9.2.0"],
+)
+
+bazel_dep(name = "platforms", version = "1.1.0")
+bazel_dep(name = "rules_elixir_mix", version = "0.0.0")
+local_path_override(
+    module_name = "rules_elixir_mix",
+    path = "..",
+)
+
+elixir_config = use_extension(
+    "@rules_elixir_mix//bzlmod:toolchains.bzl",
+    "elixir_config",
+)
+elixir_config.prebuilt_toolchain(
+    name = "otp29_elixir120",
+    elixir_sha256 = "71fe6d9184e48bd09a53c93cf804e3ee01f1b30f2045a35364cd0845ac1684a5",
+    elixir_type = "tar.gz",
+    elixir_url = "file:///tmp/rules-elixir-mix-ci-elixir-with-version.tar.gz",
+    elixir_version = "1.20.2",
+    erlexec = "erts-17.0.3/bin/erlexec",
+    exec_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    otp_sha256 = "959b4144e47d992aa6fd08a8f4d8b21d4a6ba36dd67a61490715140796a2f9f6",
+    otp_type = "tar.gz",
+    otp_url = "file:///tmp/rules-elixir-mix-ci-otp-container.tar.gz",
+    otp_version = "29.0.3",
+    runtime_abi = "//:hexpm_elixir_otp29_elixir120",
+)
+use_repo(elixir_config, "elixir_config")
+
+register_toolchains(
+    "@elixir_config//otp29_elixir120:otp_toolchain",
+    "@elixir_config//otp29_elixir120:toolchain",
+)
+
+register_execution_platforms("//:ci_execution_platform")
+
+http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
+
+http_file(
+    name = "lazy_html_nif_x86_64_linux_gnu",
+    downloaded_file_path = "lazy_html-nif-2.16-x86_64-linux-gnu-0.1.11.tar.gz",
+    sha256 = "8e4bc558f8fed8f5b766ffc4d3e566ebd1ab9ca5609dfcc4ab6b55853072702c",
+    urls = ["https://github.com/dashbitco/lazy_html/releases/download/v0.1.11/lazy_html-nif-2.16-x86_64-linux-gnu-0.1.11.tar.gz"],
+)
+
+elixir_packages = use_extension(
+    "@rules_elixir_mix//bzlmod:packages.bzl",
+    "elixir_packages",
+)
+elixir_packages.mix_lock(
+    name = "mix_deps",
+    lockfile = "//:mix.lock",
+    precompiled_native_artifacts = {
+        "lazy_html": "@lazy_html_nif_x86_64_linux_gnu//file",
+    },
+)
+use_repo(elixir_packages, "hex_pm", "mix_deps")

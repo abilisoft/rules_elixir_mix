@@ -1,0 +1,21 @@
+exports_files(["MODULE.bazel"])
+
+alias(
+    name = "buildifier.fix",
+    actual = "//tools/buildifier:buildifier.fix",
+)
+
+test_suite(
+    name = "buildifier_test",
+    tests = ["//tools/buildifier:buildifier_test"],
+)
+
+toolchain_type(
+    name = "otp_toolchain_type",
+    visibility = ["//visibility:public"],
+)
+
+toolchain_type(
+    name = "toolchain_type",
+    visibility = ["//visibility:public"],
+)

@@ -1,0 +1,37 @@
+load("@rules_elixir_mix//:defs.bzl", "mix_library", "mix_release", "mix_test")
+
+# Production library
+mix_library(
+    name = "lib",
+    srcs = glob(["lib/**/*.ex"]),
+    app_name = "plug_sample",
+    mix_config = ":mix.exs",
+    deps = [
+        "@mix_deps//:plug_crypto",
+    ],
+)
+
+# Test library (compiled with MIX_ENV=test)
+mix_library(
+    name = "lib_test",
+    srcs = glob(["lib/**/*.ex"]),
+    app_name = "plug_sample",
+    mix_config = ":mix.exs",
+    mix_env = "test",
+    deps = [
+        "@mix_deps//:plug_crypto",
+    ],
+)
+
+mix_release(
+    name = "bin",
+    app_name = "plug_sample",
+    application = ":lib",
+)
+
+# Test runner using pre-compiled artifacts
+mix_test(
+    name = "plug_sample_test",
+    srcs = glob(["test/**/*.exs"]),
+    lib = ":lib_test",
+)

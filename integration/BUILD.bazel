@@ -1,0 +1,249 @@
+load(
+    "@rules_elixir_mix//:defs.bzl",
+    "dialyzer_plt",
+    "elixir_dialyzer_test",
+    "elixir_generated_source",
+    "elixir_protocols",
+    "elixir_release_test",
+    "mix_coverage_test",
+    "mix_credo_test",
+    "mix_format_test",
+    "mix_library",
+    "mix_local",
+    "mix_phx_assets",
+    "mix_release",
+    "mix_sobelow_test",
+    "mix_task_test",
+    "mix_test",
+    "mix_typecheck_test",
+    "mix_xref_test",
+)
+load(":generated_asset.bzl", "generated_asset")
+
+# The prebuilt VM's native shared-library closure is part of the immutable
+# execution image contract. Its digest is therefore present in Bazel's
+# execution-platform properties and in toolchain resolution, not merely in CI.
+constraint_setting(
+    name = "execution_image",
+    visibility = ["//visibility:public"],
+)
+
+constraint_value(
+    name = "hexpm_elixir_otp29_elixir120",
+    constraint_setting = ":execution_image",
+    visibility = ["//visibility:public"],
+)
+
+platform(
+    name = "ci_execution_platform",
+    constraint_values = [
+        ":hexpm_elixir_otp29_elixir120",
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    exec_properties = {
+        "container-image": "docker://hexpm/elixir@sha256:50b4199b1b892d140add53647af4c8e593c441ee8320f168f5eb66a5032d7379",
+    },
+)
+
+mix_library(
+    name = "lib",
+    srcs = glob(["lib/**/*.ex"]),
+    app_name = "integration",
+    compile_deps = [
+        "@mix_deps//:credo",
+        "@mix_deps//:dialyxir",
+        "@mix_deps//:sobelow",
+        "@mix_deps//:wallaby",
+    ],
+    config = glob(["config/*.exs"]),
+    generated_srcs = [":mapped_generated_elixir"],
+    lockfile = "mix.lock",
+    mix_config = "mix.exs",
+    mix_env = "test",
+    priv = glob(["priv/**"]),
+    runtime_deps = [
+        "@mix_deps//:bandit",
+        "@mix_deps//:ecto_sql",
+        "@mix_deps//:jason",
+        "@mix_deps//:lazy_html",
+        "@mix_deps//:phoenix",
+        "@mix_deps//:phoenix_html",
+        "@mix_deps//:phoenix_live_view",
+        "@mix_deps//:postgrex",
+    ],
+)
+
+mix_test(
+    name = "test",
+    srcs = glob(["test/**/*.exs"]),
+    lib = ":lib",
+)
+
+mix_coverage_test(
+    name = "coverage",
+    srcs = glob(["test/**/*.exs"]),
+    lib = ":lib",
+)
+
+mix_format_test(
+    name = "format",
+    srcs = glob([
+        "config/*.exs",
+        "lib/**/*.ex",
+        "test/**/*.exs",
+    ]) + ["mix.exs"],
+    lib = ":lib",
+)
+
+mix_typecheck_test(
+    name = "typecheck",
+    srcs = glob([
+        "config/*.exs",
+        "lib/**/*.ex",
+    ]) + ["mix.exs"],
+    lib = ":lib",
+)
+
+mix_xref_test(
+    name = "xref",
+    srcs = glob(["lib/**/*.ex"]) + ["mix.exs"],
+    lib = ":lib",
+    xref_args = [
+        "graph",
+        "--format",
+        "stats",
+    ],
+)
+
+mix_task_test(
+    name = "task_test",
+    srcs = glob([
+        "lib/**/*.ex",
+        "test/**/*.exs",
+    ]) + [
+        "mix.exs",
+        "mix.lock",
+    ],
+    lib = ":lib",
+    task = "compile",
+    task_args = ["--warnings-as-errors"],
+)
+
+mix_credo_test(
+    name = "credo",
+    srcs = glob([
+        "config/*.exs",
+        "lib/**/*.ex",
+        "test/**/*.exs",
+    ]) + [
+        "mix.exs",
+        "mix.lock",
+    ],
+    lib = ":lib",
+)
+
+mix_sobelow_test(
+    name = "sobelow",
+    srcs = glob([
+        "config/*.exs",
+        "lib/**/*.ex",
+    ]) + [
+        "mix.exs",
+        "mix.lock",
+    ],
+    lib = ":lib",
+)
+
+mix_local(
+    name = "local",
+    lib = ":lib",
+    task = "compile",
+)
+
+generated_asset(
+    name = "generated_static_input",
+)
+
+generated_asset(
+    name = "generated_elixir_input",
+    content = "defmodule Integration.GeneratedByBazel do\n  @moduledoc false\n\n  def value, do: :generated\nend\n",
+    filename = "generated_by_bazel.ex",
+)
+
+elixir_generated_source(
+    name = "mapped_generated_elixir",
+    src = ":generated_elixir_input",
+    destination = "lib/integration/generated_by_bazel.ex",
+)
+
+elixir_generated_source(
+    name = "mapped_generated_static_input",
+    src = ":generated_static_input",
+    destination = "priv/static/generated.txt",
+)
+
+mix_phx_assets(
+    name = "digested_assets",
+    srcs = glob(["priv/static/**"]),
+    generated_srcs = [":mapped_generated_static_input"],
+    lib = ":lib",
+    mix_env = "test",
+)
+
+dialyzer_plt(
+    name = "plt",
+    deps = [":lib"],
+)
+
+elixir_dialyzer_test(
+    name = "dialyzer",
+    apps = [":lib"],
+    plt = ":plt",
+)
+
+mix_library(
+    name = "release_lib",
+    srcs = glob(["lib/**/*.ex"]),
+    app_name = "integration",
+    compile_deps = [
+        "@mix_deps//:credo",
+        "@mix_deps//:dialyxir",
+        "@mix_deps//:sobelow",
+        "@mix_deps//:wallaby",
+    ],
+    config = glob(["config/*.exs"]),
+    generated_srcs = [":mapped_generated_elixir"],
+    lockfile = "mix.lock",
+    mix_config = "mix.exs",
+    mix_env = "test",
+    priv_entries = [":digested_assets"],
+    runtime_deps = [
+        "@mix_deps//:bandit",
+        "@mix_deps//:ecto_sql",
+        "@mix_deps//:jason",
+        "@mix_deps//:lazy_html",
+        "@mix_deps//:phoenix",
+        "@mix_deps//:phoenix_html",
+        "@mix_deps//:phoenix_live_view",
+        "@mix_deps//:postgrex",
+    ],
+)
+
+elixir_protocols(
+    name = "protocols",
+    apps = [":release_lib"],
+)
+
+mix_release(
+    name = "release",
+    application = ":release_lib",
+    mix_env = "test",
+    protocols = ":protocols",
+)
+
+elixir_release_test(
+    name = "release_test",
+    release = ":release",
+    required_paths = ["lib/integration-0.1.0/priv/static/cache_manifest.json"],
+)

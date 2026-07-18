@@ -1,0 +1,36 @@
+"""Declared mappings into an OTP application's priv directory."""
+
+ElixirPrivInfo = provider(
+    doc = "One file or tree artifact mapped below an OTP application's priv/ directory.",
+    fields = {
+        "entries": "List of structs with source File and relative destination.",
+    },
+)
+
+def _validate_destination(destination):
+    if not destination or destination.startswith("/"):
+        fail("elixir_priv destination must be a non-empty relative path")
+    if "\\" in destination:
+        fail("elixir_priv destination must use forward slashes")
+    for part in destination.split("/"):
+        if part in ["", ".", ".."]:
+            fail("elixir_priv destination must not contain empty, '.' or '..' segments")
+
+def _elixir_priv_impl(ctx):
+    _validate_destination(ctx.attr.destination)
+    source = ctx.file.src
+    return [
+        DefaultInfo(files = depset([source]), runfiles = ctx.runfiles(files = [source])),
+        ElixirPrivInfo(entries = [struct(
+            destination = ctx.attr.destination,
+            source = source,
+        )]),
+    ]
+
+elixir_priv = rule(
+    implementation = _elixir_priv_impl,
+    attrs = {
+        "src": attr.label(mandatory = True, allow_single_file = True),
+        "destination": attr.string(mandatory = True),
+    },
+)

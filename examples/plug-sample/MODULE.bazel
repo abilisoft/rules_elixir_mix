@@ -1,0 +1,31 @@
+module(
+    name = "plug_sample",
+    version = "0.1.0",
+    bazel_compatibility = [">=9.2.0"],
+)
+
+bazel_dep(
+    name = "rules_elixir_mix",
+    version = "0.0.0",
+)
+local_path_override(
+    module_name = "rules_elixir_mix",
+    path = "../..",
+)
+
+# Register a checksum-pinned source or prebuilt toolchain from
+# ../../docs/source_toolchains.md or ../../docs/prebuilt_toolchains.md.
+
+elixir_packages = use_extension(
+    "@rules_elixir_mix//bzlmod:packages.bzl",
+    "elixir_packages",
+)
+elixir_packages.mix_lock(
+    name = "mix_deps",
+    lockfile = "//:mix.lock",
+)
+use_repo(
+    elixir_packages,
+    "hex_pm",
+    "mix_deps",
+)

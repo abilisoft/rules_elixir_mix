@@ -1,0 +1,15 @@
+{
+  "homepage": "https://github.com/silkrad/rules_elixir_mix",
+  "maintainers": [
+    {
+      "email": "rules-elixir-mix@users.noreply.github.com",
+      "github": "silkrad",
+      "name": "rules_elixir_mix maintainers"
+    }
+  ],
+  "repository": [
+    "github:silkrad/rules_elixir_mix"
+  ],
+  "versions": [],
+  "yanked_versions": {}
+}

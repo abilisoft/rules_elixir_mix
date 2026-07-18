@@ -1,0 +1,40 @@
+load("@rules_elixir_mix//:defs.bzl", "mix_format_test", "mix_library", "mix_release", "mix_test")
+
+# Production library
+mix_library(
+    name = "basic",
+    srcs = glob(["lib/**/*.ex"]),
+    app_name = "main",
+    mix_config = ":mix.exs",
+)
+
+# Test library (compiled with MIX_ENV=test)
+mix_library(
+    name = "basic_test_lib",
+    srcs = glob(["lib/**/*.ex"]),
+    app_name = "main",
+    mix_config = ":mix.exs",
+    mix_env = "test",
+)
+
+# Test runner using pre-compiled artifacts
+mix_test(
+    name = "basic_test",
+    srcs = glob(["test/**/*.exs"]),
+    lib = ":basic_test_lib",
+)
+
+mix_format_test(
+    name = "format_test",
+    srcs = glob([
+        "**/*.ex",
+        "**/*.exs",
+    ]),
+    lib = ":basic_test_lib",
+)
+
+mix_release(
+    name = "basic_release",
+    app_name = "main",
+    application = ":basic",
+)

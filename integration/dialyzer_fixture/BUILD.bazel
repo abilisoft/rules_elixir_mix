@@ -1,0 +1,24 @@
+load(
+    "@rules_elixir_mix//:defs.bzl",
+    "dialyzer_plt",
+    "elixir_dialyzer_test",
+    "mix_library",
+)
+
+mix_library(
+    name = "lib",
+    srcs = ["lib/dialyzer_fixture.ex"],
+    app_name = "dialyzer_fixture",
+    mix_config = "mix.exs",
+    mix_env = "test",
+)
+
+dialyzer_plt(
+    name = "plt",
+)
+
+elixir_dialyzer_test(
+    name = "dialyzer",
+    apps = [":lib"],
+    plt = ":plt",
+)

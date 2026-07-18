@@ -1,0 +1,479 @@
+load(
+    "//:defs.bzl",
+    "dialyzer_plt",
+    "elixir_dialyzer_test",
+    "elixir_fips_runtime_test",
+    "elixir_generated_source",
+    "elixir_ls",
+    "elixir_prebuilt_release",
+    "elixir_protocols",
+    "elixir_release_test",
+    "elixir_toolchain",
+    "erlang_app",
+    "erlang_common_test",
+    "erlang_eunit_test",
+    "mix_coverage_test",
+    "mix_ecto_test",
+    "mix_format_test",
+    "mix_iex",
+    "mix_lcov_test",
+    "mix_library",
+    "mix_local",
+    "mix_phx_assets",
+    "mix_phx_server",
+    "mix_release",
+    "mix_test",
+    "mix_typecheck_test",
+    "mix_xref_test",
+    "otp_crypto_sdk",
+    "otp_prebuilt_release",
+    "otp_toolchain",
+    "rustler_nif",
+)
+load(":analysis_tests.bzl", "fake_directory", "fake_executable", "generated_file", "mix_lock_analysis_check", "toolchain_analysis_check")
+
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "otp_files",
+    srcs = glob(["runtime/otp/**"]),
+)
+
+filegroup(
+    name = "elixir_files",
+    srcs = glob(["runtime/elixir/**"]),
+)
+
+otp_prebuilt_release(
+    name = "otp",
+    srcs = [":otp_files"],
+    erlexec = "runtime/otp/erts-17.0.3/bin/erlexec",
+    version = "29.0.3",
+    version_marker = "runtime/otp/releases/29/OTP_VERSION",
+)
+
+elixir_prebuilt_release(
+    name = "runtime",
+    srcs = [":elixir_files"],
+    home_marker = "runtime/elixir/bin/elixir",
+    otp = ":otp",
+    version = "1.20.2",
+    version_marker = "runtime/elixir/VERSION",
+)
+
+elixir_toolchain(
+    name = "elixir",
+    elixir = ":runtime",
+    native_bash = ":fake_activation",
+    native_make = ":fake_activation",
+    native_perl = ":fake_activation",
+    native_posix_tools = [":fake_activation"],
+)
+
+otp_toolchain(
+    name = "otp_toolchain_impl",
+    otp = ":otp",
+)
+
+toolchain(
+    name = "otp_toolchain",
+    toolchain = ":otp_toolchain_impl",
+    toolchain_type = "//:otp_toolchain_type",
+)
+
+fake_executable(name = "fake_activation")
+
+fake_directory(name = "fake_crypto_sysroot")
+
+otp_crypto_sdk(
+    name = "static_crypto_sdk",
+    sysroot = ":fake_crypto_sysroot",
+)
+
+otp_crypto_sdk(
+    name = "provider_crypto_sdk",
+    activation_args = [
+        "fipsinstall",
+        "-module",
+        "{sysroot}/lib/fips.so",
+        "-out",
+        "{activation_root}/fipsmodule.cnf",
+    ],
+    activation_exec_tool = ":fake_activation",
+    activation_tool = ":fake_activation",
+    activation_tool_release_path = "bin/activate_crypto",
+    fully_static = False,
+    runtime_destinations = [
+        "bin/activate_crypto",
+        "lib/fips.so",
+    ],
+    runtime_environment = {
+        "FIPS_MODULE_CONF": "{activation_root}/fipsmodule.cnf",
+        "OPENSSL_CONF": "{sysroot}/openssl.cnf",
+        "OPENSSL_MODULES": "{sysroot}/lib",
+    },
+    runtime_files = [
+        ":fake_activation",
+        "runtime/otp/erts-17.0.3/bin/beam.smp",
+    ],
+    sysroot = ":fake_crypto_sysroot",
+)
+
+otp_prebuilt_release(
+    name = "otp_fips_provider",
+    srcs = [":otp_files"],
+    crypto_sdk = ":provider_crypto_sdk",
+    erlexec = "runtime/otp/erts-17.0.3/bin/erlexec",
+    fips = "required",
+    static_crypto_nif = True,
+    version = "29.0.3",
+    version_marker = "runtime/otp/releases/29/OTP_VERSION",
+)
+
+elixir_prebuilt_release(
+    name = "fips_runtime",
+    srcs = [":elixir_files"],
+    home_marker = "runtime/elixir/bin/elixir",
+    otp = ":otp_fips_provider",
+    version = "1.20.2",
+    version_marker = "runtime/elixir/VERSION",
+)
+
+elixir_toolchain(
+    name = "fips_elixir",
+    elixir = ":fips_runtime",
+)
+
+otp_toolchain(
+    name = "fips_otp_toolchain_impl",
+    otp = ":otp_fips_provider",
+)
+
+toolchain(
+    name = "fips_otp_toolchain",
+    toolchain = ":fips_otp_toolchain_impl",
+    toolchain_type = "//:otp_toolchain_type",
+)
+
+toolchain(
+    name = "fips_toolchain",
+    toolchain = ":fips_elixir",
+    toolchain_type = "//:toolchain_type",
+)
+
+toolchain(
+    name = "toolchain",
+    toolchain = ":elixir",
+    toolchain_type = "//:toolchain_type",
+)
+
+# This target is analysis-only. It forces Bazel to load the public API and
+# resolve the combined OTP/Elixir toolchain without executing a host runtime.
+mix_library(
+    name = "analysis_fixture",
+    srcs = ["lib/analysis_fixture.ex"],
+    app_name = "analysis_fixture",
+    mix_config = "mix.exs",
+    tags = ["manual"],
+)
+
+mix_library(
+    name = "native_analysis_fixture",
+    srcs = ["lib/analysis_fixture.ex"],
+    app_name = "native_analysis_fixture",
+    mix_config = "mix.exs",
+    native_build = True,
+    tags = ["manual"],
+)
+
+mix_library(
+    name = "analysis_test_lib",
+    srcs = [
+        "lib/analysis_fixture.ex",
+        "lib/analysis_protocol.ex",
+    ],
+    app_name = "analysis_fixture",
+    generated_srcs = [":generated_source"],
+    mix_config = "mix.exs",
+    mix_env = "test",
+    tags = ["manual"],
+)
+
+elixir_protocols(
+    name = "protocols_analysis_fixture",
+    apps = [":analysis_test_lib"],
+    tags = ["manual"],
+)
+
+generated_file(
+    name = "generated_source_file",
+    content = "defmodule GeneratedAnalysisFixture do\n  def value, do: :generated\nend\n",
+    filename = "generated_analysis_fixture.ex",
+)
+
+elixir_generated_source(
+    name = "generated_source",
+    src = ":generated_source_file",
+    destination = "lib/generated_analysis_fixture.ex",
+)
+
+mix_test(
+    name = "exunit_analysis_fixture",
+    srcs = [
+        "test/analysis_fixture_second_test.exs",
+        "test/analysis_fixture_test.exs",
+        "test/test_helper.exs",
+    ],
+    lib = ":analysis_test_lib",
+    tags = ["manual"],
+)
+
+mix_coverage_test(
+    name = "coverage_analysis_fixture",
+    srcs = [
+        "test/analysis_fixture_second_test.exs",
+        "test/analysis_fixture_test.exs",
+        "test/test_helper.exs",
+    ],
+    lib = ":analysis_test_lib",
+    tags = ["manual"],
+)
+
+mix_xref_test(
+    name = "xref_analysis_fixture",
+    srcs = [
+        "lib/analysis_fixture.ex",
+        "lib/analysis_protocol.ex",
+        "mix.exs",
+    ],
+    lib = ":analysis_test_lib",
+    tags = ["manual"],
+    xref_args = [
+        "graph",
+        "--format",
+        "stats",
+        "--label",
+        "compile-connected",
+    ],
+)
+
+dialyzer_plt(
+    name = "analysis_fixture_plt",
+    otp_apps = [
+        "erts",
+        "kernel",
+        "stdlib",
+    ],
+    tags = ["manual"],
+)
+
+elixir_dialyzer_test(
+    name = "dialyzer_analysis_fixture",
+    apps = [":analysis_test_lib"],
+    plt = ":analysis_fixture_plt",
+    tags = ["manual"],
+)
+
+mix_format_test(
+    name = "format_analysis_fixture",
+    srcs = [
+        "lib/analysis_fixture.ex",
+        "mix.exs",
+        "test/analysis_fixture_test.exs",
+        "test/test_helper.exs",
+    ],
+    lib = ":analysis_test_lib",
+    tags = ["manual"],
+)
+
+mix_typecheck_test(
+    name = "typecheck_analysis_fixture",
+    srcs = [
+        "lib/analysis_fixture.ex",
+        "mix.exs",
+    ],
+    lib = ":analysis_test_lib",
+    tags = ["manual"],
+)
+
+mix_release(
+    name = "release_analysis_fixture",
+    app_name = "analysis_fixture",
+    application = ":analysis_fixture",
+    tags = ["manual"],
+)
+
+elixir_release_test(
+    name = "release_runtime_analysis_fixture",
+    release = ":release_analysis_fixture",
+    tags = ["manual"],
+)
+
+mix_phx_assets(
+    name = "phx_assets_analysis_fixture",
+    srcs = ["priv/static/app.js"],
+    lib = ":analysis_fixture",
+    tags = ["manual"],
+)
+
+mix_library(
+    name = "fips_analysis_fixture",
+    srcs = ["lib/analysis_fixture.ex"],
+    app_name = "analysis_fixture",
+    config = ["config/runtime.exs"],
+    mix_config = "mix.exs",
+    tags = ["manual"],
+)
+
+mix_release(
+    name = "fips_release_analysis_fixture",
+    application = ":fips_analysis_fixture",
+    fips = "required",
+    tags = ["manual"],
+)
+
+elixir_fips_runtime_test(
+    name = "fips_runtime_analysis_fixture",
+    elf_inspector = ":fake_activation",
+    tags = ["manual"],
+)
+
+mix_local(
+    name = "local_analysis_fixture",
+    lib = ":analysis_fixture",
+    tags = ["manual"],
+    task = "compile",
+)
+
+mix_phx_server(
+    name = "phx_server_analysis_fixture",
+    lib = ":analysis_fixture",
+    tags = ["manual"],
+)
+
+mix_iex(
+    name = "iex_analysis_fixture",
+    lib = ":analysis_fixture",
+    tags = ["manual"],
+)
+
+elixir_ls(
+    name = "elixir_ls_analysis_fixture",
+    lib = ":analysis_fixture",
+    tags = ["manual"],
+)
+
+mix_ecto_test(
+    name = "ecto_analysis_fixture",
+    srcs = [
+        "test/analysis_fixture_test.exs",
+        "test/test_helper.exs",
+    ],
+    createdb = "runtime/otp/erts-17.0.3/bin/erlexec",
+    initdb = "runtime/otp/erts-17.0.3/bin/erlexec",
+    lib = ":analysis_test_lib",
+    postgres = "runtime/otp/erts-17.0.3/bin/erlexec",
+    tags = ["manual"],
+)
+
+mix_lcov_test(
+    name = "lcov_analysis_fixture",
+    srcs = [
+        "test/analysis_fixture_test.exs",
+        "test/test_helper.exs",
+    ],
+    lib = ":analysis_test_lib",
+    tags = ["manual"],
+)
+
+rustler_nif(
+    name = "rustler_nif_analysis_fixture",
+    destination = "native/libanalysis_fixture.so",
+    shared_library = "runtime/otp/erts-17.0.3/bin/beam.smp",
+    tags = ["manual"],
+)
+
+mix_lock_analysis_check(
+    name = "lock_analysis",
+    content = """%{
+  "compile_tool": {:hex, :compile_tool, "1.0.0", "outer", [:rebar3], [], "hexpm", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+  "web_app" => {:hex, :web_app, "2.0.0", "outer", [:mix], [{:compile_tool, "~> 1.0", [hex: :compile_tool, runtime: false]}], "hexpm", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}
+}
+""",
+    tags = ["manual"],
+)
+
+toolchain_analysis_check(
+    name = "toolchain_analysis",
+    tags = ["manual"],
+)
+
+erlang_app(
+    name = "erlang_analysis_fixture",
+    srcs = [
+        "src/analysis_fixture.erl",
+        "src/analysis_fixture_SUITE.erl",
+    ],
+    app_name = "erlang_analysis_fixture",
+    tags = ["manual"],
+    version = "0.1.0",
+)
+
+erlang_eunit_test(
+    name = "eunit_analysis_fixture",
+    apps = [":erlang_analysis_fixture"],
+    tags = ["manual"],
+)
+
+mix_library(
+    name = "compile_only_dep",
+    srcs = ["fixtures/compile_dep/lib/compile_only_dep.ex"],
+    app_name = "compile_only_dep",
+    mix_config = "fixtures/compile_dep/mix.exs",
+    mix_env = "test",
+    tags = ["manual"],
+)
+
+mix_library(
+    name = "runtime_consumer",
+    srcs = ["fixtures/runtime_consumer/lib/runtime_consumer.ex"],
+    app_name = "runtime_consumer",
+    compile_deps = [":compile_only_dep"],
+    mix_config = "fixtures/runtime_consumer/mix.exs",
+    mix_env = "test",
+    tags = ["manual"],
+)
+
+mix_test(
+    name = "compile_runtime_boundary_test",
+    srcs = [
+        "fixtures/runtime_consumer/test/runtime_consumer_test.exs",
+        "fixtures/runtime_consumer/test/test_helper.exs",
+    ],
+    lib = ":runtime_consumer",
+    tags = ["manual"],
+)
+
+erlang_common_test(
+    name = "common_test_analysis_fixture",
+    apps = [":erlang_analysis_fixture"],
+    suites = ["analysis_fixture_SUITE"],
+    tags = ["manual"],
+)
+
+erlang_app(
+    name = "artifact_normalizer_test_app",
+    srcs = [
+        "src/artifact_normalizer_tests.erl",
+        "//private:artifact_normalizer.erl",
+    ],
+    app_name = "artifact_normalizer_test_app",
+    tags = ["manual"],
+    version = "0.1.0",
+)
+
+erlang_eunit_test(
+    name = "artifact_normalizer_test",
+    apps = [":artifact_normalizer_test_app"],
+    tags = ["manual"],
+)

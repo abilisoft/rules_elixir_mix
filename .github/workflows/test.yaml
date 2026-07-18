@@ -1,0 +1,94 @@
+name: Bazel
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: bazel-contrib/setup-bazel@0.19.0
+        with:
+          bazelisk-cache: true
+          disk-cache: true
+          repository-cache: true
+      - name: Validate Starlark
+        run: bazel test //:buildifier_test
+      - name: Analyze public rule surface
+        run: >-
+          bazel build --nobuild
+          //test:analysis_fixture
+          //test:analysis_test_lib
+          //test:common_test_analysis_fixture
+          //test:ecto_analysis_fixture
+          //test:elixir_ls_analysis_fixture
+          //test:erlang_analysis_fixture
+          //test:eunit_analysis_fixture
+          //test:exunit_analysis_fixture
+          //test:format_analysis_fixture
+          //test:iex_analysis_fixture
+          //test:lcov_analysis_fixture
+          //test:local_analysis_fixture
+          //test:lock_analysis
+          //test:native_analysis_fixture
+          //test:phx_assets_analysis_fixture
+          //test:phx_server_analysis_fixture
+          //test:provider_crypto_sdk
+          //test:release_analysis_fixture
+          //test:rustler_nif_analysis_fixture
+          //test:static_crypto_sdk
+          //test:toolchain_analysis
+          //test:typecheck_analysis_fixture
+      - name: Analyze FIPS and provider runtime surface
+        run: >-
+          bazel build --nobuild
+          --extra_toolchains=//test:fips_otp_toolchain,//test:fips_toolchain
+          //test:fips_analysis_fixture
+          //test:fips_release_analysis_fixture
+          //test:fips_runtime_analysis_fixture
+
+  integration:
+    runs-on: ubuntu-24.04
+    container:
+      image: hexpm/elixir@sha256:50b4199b1b892d140add53647af4c8e593c441ee8320f168f5eb66a5032d7379
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: bazel-contrib/setup-bazel@0.19.0
+        with:
+          bazelisk-cache: true
+          disk-cache: true
+          repository-cache: true
+      - name: Package pinned OTP and Elixir runtimes deterministically
+        run: |
+          tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner --format=gnu -czf /tmp/rules-elixir-mix-ci-otp-container.tar.gz -C /usr/local/lib/erlang .
+          cp integration/ELIXIR_VERSION /usr/local/lib/elixir/VERSION
+          tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner --format=gnu -czf /tmp/rules-elixir-mix-ci-elixir-with-version.tar.gz -C /usr/local/lib/elixir .
+      - name: Execute Mix, Hex, Rebar, ExUnit, release, and analysis actions
+        working-directory: integration
+        run: |
+          bazel test \
+            //:coverage \
+            //:credo \
+            //:dialyzer \
+            //:format \
+            //:release_test \
+            //:sobelow \
+            //:task_test \
+            //:test \
+            //:typecheck \
+            //:xref \
+            //dialyzer_fixture:dialyzer
+          bazel test --test_sharding_strategy=forced=2 //:test
+          bazel build //:digested_assets
+          test ! -e bazel-bin/lib_compile_build/.rules_elixir_mix_state
+      - name: Exercise the writable local cache twice
+        working-directory: integration
+        run: |
+          bazel run //:local
+          RULES_ELIXIR_MIX_REQUIRE_WARM_CACHE=true bazel run //:local

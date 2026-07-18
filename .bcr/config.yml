@@ -1,0 +1,14 @@
+bcr_test_module:
+  module_path: "."
+  matrix:
+    platform:
+      - ubuntu2204
+    bazel:
+      - 9.x
+  tasks:
+    validate:
+      name: Validate rules_elixir_mix
+      platform: ${{ platform }}
+      bazel: ${{ bazel }}
+      test_targets:
+        - "//:buildifier_test"

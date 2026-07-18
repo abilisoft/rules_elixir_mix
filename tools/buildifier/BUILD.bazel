@@ -1,0 +1,25 @@
+load("@buildifier_prebuilt//:rules.bzl", "buildifier", "buildifier_test")
+
+_BUILDIFIER_EXCLUDES = [
+    "./.git/*",
+    "./.local/*",
+    "./bazel-*",
+]
+
+buildifier(
+    name = "buildifier.fix",
+    exclude_patterns = _BUILDIFIER_EXCLUDES,
+    lint_mode = "fix",
+    mode = "fix",
+    visibility = ["//visibility:public"],
+)
+
+buildifier_test(
+    name = "buildifier_test",
+    exclude_patterns = _BUILDIFIER_EXCLUDES,
+    lint_mode = "warn",
+    mode = "diff",
+    no_sandbox = True,
+    visibility = ["//visibility:public"],
+    workspace = "//:MODULE.bazel",
+)
