@@ -105,7 +105,7 @@ jobs:
   source-toolchain:
     runs-on: ubuntu-24.04
     container:
-      image: hexpm/elixir@sha256:50b4199b1b892d140add53647af4c8e593c441ee8320f168f5eb66a5032d7379
+      image: erlang@sha256:ec20ffd1224a25f6105eec70a684fd2d7f2cf83084dedb669346644bcee4c466
     steps:
       - uses: actions/checkout@v6.0.2
       - uses: bazel-contrib/setup-bazel@0.19.0
@@ -117,7 +117,7 @@ jobs:
       - name: Package the checksum-pinned bootstrap runtime
         run: >-
           tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner
-          --format=gnu -czf /tmp/rules-elixir-mix-ci-otp-container.tar.gz
+          --format=gnu -czf /tmp/rules-elixir-mix-ci-otp-erlang-29.0.3.tar.gz
           -C /usr/local/lib/erlang .
       - name: Build OTP 29.0.3 and Elixir 1.20.2 from pristine sources
         working-directory: source_integration

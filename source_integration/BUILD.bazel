@@ -17,6 +17,6 @@ platform(
         "@platforms//os:linux",
     ],
     exec_properties = {
-        "container-image": "docker://hexpm/elixir@sha256:50b4199b1b892d140add53647af4c8e593c441ee8320f168f5eb66a5032d7379",
+        "container-image": "docker://erlang@sha256:ec20ffd1224a25f6105eec70a684fd2d7f2cf83084dedb669346644bcee4c466",
     },
 )

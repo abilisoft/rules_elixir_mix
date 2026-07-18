@@ -43,9 +43,9 @@ elixir_config.source_toolchain(
     name = "otp29_elixir120_source",
     bash = "@source_tools//:bash",
     bootstrap_erlexec = "erts-17.0.3/bin/erlexec",
-    bootstrap_otp_sha256 = "959b4144e47d992aa6fd08a8f4d8b21d4a6ba36dd67a61490715140796a2f9f6",
+    bootstrap_otp_sha256 = "a636ad0585b0fe85a5dfa165ba23a9c81a67cadfdd6e2a732a1cc50c51766bcf",
     bootstrap_otp_type = "tar.gz",
-    bootstrap_otp_url = "file:///tmp/rules-elixir-mix-ci-otp-container.tar.gz",
+    bootstrap_otp_url = "file:///tmp/rules-elixir-mix-ci-otp-erlang-29.0.3.tar.gz",
     bootstrap_otp_version = "29.0.3",
     bootstrap_version_marker = "releases/29/OTP_VERSION",
     configure_options = [
