@@ -1,5 +1,6 @@
 load(
     "//:defs.bzl",
+    "beam_runtime_archive",
     "dialyzer_plt",
     "elixir_dialyzer_test",
     "elixir_fips_runtime_test",
@@ -31,11 +32,14 @@ load(
     "otp_toolchain",
     "rustler_nif",
 )
-load(":analysis_tests.bzl", "fake_directory", "fake_executable", "generated_file", "mix_lock_analysis_check", "toolchain_analysis_check", "version_catalog_analysis_check")
+load(":analysis_tests.bzl", "fake_directory", "fake_executable", "fake_runtime_source", "generated_file", "mix_lock_analysis_check", "toolchain_analysis_check", "version_catalog_analysis_check")
 
 package(default_visibility = ["//visibility:public"])
 
-exports_files(["src/artifact_normalizer_tests.erl"])
+exports_files([
+    "src/artifact_normalizer_tests.erl",
+    "src/runtime_archive_driver_tests.erl",
+])
 
 filegroup(
     name = "otp_files",
@@ -172,6 +176,21 @@ toolchain(
     name = "toolchain",
     toolchain = ":elixir",
     toolchain_type = "//:toolchain_type",
+)
+
+fake_runtime_source(
+    name = "runtime_archive_source",
+    kind = "otp",
+    otp = ":otp_fips_provider",
+    root = ":fake_crypto_sysroot",
+    version = "29.0.3",
+)
+
+beam_runtime_archive(
+    name = "runtime_archive_analysis_fixture",
+    package_dir = "otp-29.0.3-linux-x86_64",
+    runtime = ":runtime_archive_source",
+    tags = ["manual"],
 )
 
 # This target is analysis-only. It forces Bazel to load the public API and

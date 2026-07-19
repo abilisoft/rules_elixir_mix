@@ -1,0 +1,59 @@
+load(
+    "@rules_elixir_mix//:defs.bzl",
+    "elixir_prebuilt_release",
+    "elixir_toolchain",
+    "otp_prebuilt_release",
+    "otp_toolchain",
+)
+load(":smoke.bzl", "beam_toolchain_smoke")
+
+filegroup(
+    name = "otp_files",
+    srcs = glob(["runtime/otp/**"]),
+)
+
+filegroup(
+    name = "elixir_files",
+    srcs = glob(["runtime/elixir/**"]),
+)
+
+otp_prebuilt_release(
+    name = "otp",
+    srcs = [":otp_files"],
+    erlexec = "runtime/otp/erts-17.0.3/bin/erlexec",
+    version = "29.0.3",
+    version_marker = "runtime/otp/releases/29/OTP_VERSION",
+)
+
+elixir_prebuilt_release(
+    name = "elixir",
+    srcs = [":elixir_files"],
+    home_marker = "runtime/elixir/bin/.runtime_root",
+    otp = ":otp",
+    version = "1.20.2",
+    version_marker = "runtime/elixir/VERSION",
+)
+
+otp_toolchain(
+    name = "otp_toolchain_impl",
+    otp = ":otp",
+)
+
+elixir_toolchain(
+    name = "elixir_toolchain_impl",
+    elixir = ":elixir",
+)
+
+toolchain(
+    name = "otp_toolchain",
+    toolchain = ":otp_toolchain_impl",
+    toolchain_type = "@rules_elixir_mix//:otp_toolchain_type",
+)
+
+toolchain(
+    name = "toolchain",
+    toolchain = ":elixir_toolchain_impl",
+    toolchain_type = "@rules_elixir_mix//:toolchain_type",
+)
+
+beam_toolchain_smoke(name = "smoke")

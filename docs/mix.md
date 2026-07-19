@@ -133,6 +133,12 @@ Framework and analysis helpers remain thin symbolic macros over that graph:
   `elixir_generated_source`, then pass those mappings through
   `generated_srcs`; `srcs` is for files already below the Mix source root.
 
+Postgres, Chrome, and ChromeDriver are required only by those two service-test
+rules. They are not dependencies of `mix_library`, Phoenix, LiveView, releases,
+the BCR module, or OTP/Elixir prebuilt archives. Requiring executable labels on
+the test target prevents undeclared host discovery and makes the selected
+service binaries part of the test cache key.
+
 ## Phoenix and local development
 
 Writable Phoenix servers, code reloaders, and generators are intentionally

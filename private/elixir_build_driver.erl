@@ -131,7 +131,12 @@ stage_runtime(Source, Output) ->
         end,
         ["eex", "elixir", "ex_unit", "iex", "logger", "mix"]
     ),
-    copy_entry(filename:join(Source, "VERSION"), filename:join(Output, "VERSION")).
+    VersionPath = filename:join(Source, "VERSION"),
+    copy_entry(VersionPath, filename:join(Output, "VERSION")),
+    {ok, Version} = file:read_file(VersionPath),
+    Marker = filename:join([Output, "bin", ".runtime_root"]),
+    ok = ensure_parent(Marker),
+    file:write_file(Marker, Version).
 
 verify_runtime(Output, Version, OtpRelease) ->
     OtpRelease = erlang:system_info(otp_release),

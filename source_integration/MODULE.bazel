@@ -5,7 +5,7 @@ module(
 )
 
 bazel_dep(name = "platforms", version = "1.1.0")
-bazel_dep(name = "rules_elixir_mix", version = "0.0.0")
+bazel_dep(name = "rules_elixir_mix", version = "0.1.0")
 local_path_override(
     module_name = "rules_elixir_mix",
     path = "..",
@@ -40,12 +40,41 @@ elixir_config = use_extension(
     "elixir_config",
 )
 elixir_config.source_toolchain(
-    name = "catalog_source",
+    name = "catalog_source_x86_64",
     bash = "@source_tools//:bash",
     bootstrap_erlexec = "erts-17.0.3/bin/erlexec",
     bootstrap_otp_sha256 = "a636ad0585b0fe85a5dfa165ba23a9c81a67cadfdd6e2a732a1cc50c51766bcf",
     bootstrap_otp_type = "tar.gz",
-    bootstrap_otp_url = "file:///tmp/rules-elixir-mix-ci-otp-erlang-29.0.3.tar.gz",
+    bootstrap_otp_url = "file:///tmp/rules-elixir-mix-ci-otp-bootstrap-x86_64.tar.gz",
+    bootstrap_otp_version = "29.0.3",
+    bootstrap_version_marker = "releases/29/OTP_VERSION",
+    configure_options = [
+        "--disable-pgo",
+        "--disable-sctp",
+        "--without-javac",
+        "--without-odbc",
+        "--without-termcap",
+        "--without-wx",
+    ],
+    default = True,
+    exec_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    jobs = 8,
+    make = "@source_tools//:make",
+    make_options = ["SKIP_APPLICATIONS=wx debugger observer et reltool"],
+    perl = "@source_tools//:perl",
+    posix_tools = ["@source_tools//:posix_tools"],
+    runtime_abi = "//:source_runtime_abi_x86_64",
+)
+elixir_config.source_toolchain(
+    name = "catalog_source_arm64",
+    bash = "@source_tools//:bash",
+    bootstrap_erlexec = "erts-17.0.3/bin/erlexec",
+    bootstrap_otp_sha256 = "0eb1e99573b630cbbc9c7ee1e6126b083556374f9582e6874f70bfa650231fd6",
+    bootstrap_otp_type = "tar.gz",
+    bootstrap_otp_url = "file:///tmp/rules-elixir-mix-ci-otp-bootstrap-arm64.tar.gz",
     bootstrap_otp_version = "29.0.3",
     bootstrap_version_marker = "releases/29/OTP_VERSION",
     configure_options = [
@@ -57,7 +86,7 @@ elixir_config.source_toolchain(
         "--without-wx",
     ],
     exec_compatible_with = [
-        "@platforms//cpu:x86_64",
+        "@platforms//cpu:arm64",
         "@platforms//os:linux",
     ],
     jobs = 8,
@@ -65,13 +94,13 @@ elixir_config.source_toolchain(
     make_options = ["SKIP_APPLICATIONS=wx debugger observer et reltool"],
     perl = "@source_tools//:perl",
     posix_tools = ["@source_tools//:posix_tools"],
-    runtime_abi = "//:source_runtime_abi",
+    runtime_abi = "//:source_runtime_abi_arm64",
 )
 use_repo(elixir_config, "elixir_config")
 
 register_toolchains(
-    "@elixir_config//catalog_source:otp_toolchain",
-    "@elixir_config//catalog_source:toolchain",
+    "@elixir_config//catalog_source_arm64:otp_toolchain",
+    "@elixir_config//catalog_source_arm64:toolchain",
+    "@elixir_config//catalog_source_x86_64:otp_toolchain",
+    "@elixir_config//catalog_source_x86_64:toolchain",
 )
-
-register_execution_platforms("//:source_platform")

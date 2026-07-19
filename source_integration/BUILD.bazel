@@ -1,19 +1,39 @@
 constraint_setting(
     name = "runtime_abi",
-    default_constraint_value = ":source_runtime_abi",
+    default_constraint_value = ":source_runtime_abi_x86_64",
 )
 
 constraint_value(
-    name = "source_runtime_abi",
+    name = "source_runtime_abi_x86_64",
     constraint_setting = ":runtime_abi",
     visibility = ["//visibility:public"],
 )
 
 platform(
-    name = "source_platform",
+    name = "source_platform_x86_64",
     constraint_values = [
-        ":source_runtime_abi",
+        ":source_runtime_abi_x86_64",
+        "@elixir_config//:runtime_catalog_source_x86_64",
         "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    exec_properties = {
+        "container-image": "docker://erlang@sha256:ec20ffd1224a25f6105eec70a684fd2d7f2cf83084dedb669346644bcee4c466",
+    },
+)
+
+constraint_value(
+    name = "source_runtime_abi_arm64",
+    constraint_setting = ":runtime_abi",
+    visibility = ["//visibility:public"],
+)
+
+platform(
+    name = "source_platform_arm64",
+    constraint_values = [
+        ":source_runtime_abi_arm64",
+        "@elixir_config//:runtime_catalog_source_arm64",
+        "@platforms//cpu:arm64",
         "@platforms//os:linux",
     ],
     exec_properties = {

@@ -13,7 +13,8 @@ cacheable actions—while Mix remains responsible for Elixir semantics.
 > This project has not published its first stable release or official runtime
 > archive set. Pin a GitHub-verified commit and bring checksum-pinned OTP and
 > Elixir archives. CI proves Bazel 9.2.0 and the
-> [catalog-default source tuple](../bzlmod/versions.bzl) on Linux x86-64.
+> [catalog-default source tuple](../bzlmod/versions.bzl) on Linux x86-64 and
+> Linux ARM64.
 
 ## Choose your path
 
@@ -26,6 +27,7 @@ cacheable actions—while Mix remains responsible for Elixir semantics.
 | Use published OTP and Elixir archives | [Prebuilt toolchains](prebuilt_toolchains.md) |
 | Build pristine OTP and Elixir sources | [Source toolchains](source_toolchains.md) |
 | Assemble and test an OTP release | [Releases](releases.md) |
+| Publish the BCR module or runtime archives | [Publishing](publishing.md) |
 | Integrate a generic FIPS crypto SDK | [FIPS ownership](source_toolchains.md#backend-neutral-crypto-sdk) |
 | Guide an AI coding agent | [Agent playbook](agents/README.md) |
 | Understand inherited source/licensing context | [Attribution](attribution.md) |
@@ -53,9 +55,10 @@ the other.
 
 | Capability | Status |
 | --- | --- |
-| Bzlmod, Bazel 9.2+, Linux execution | CI required |
+| Bzlmod, Bazel 9.2+, Linux x86-64 and ARM64 execution | CI required |
 | Catalog-default OTP + Elixir source build | CI required |
-| Checksum-pinned prebuilt OTP/Elixir consumption | Implemented and analyzed |
+| Checksum-pinned prebuilt OTP/Elixir consumption | Implemented and integration tested |
+| Deterministic source-runtime archive production | Implemented and analysis tested; real crypto-backed publication matrix pending |
 | Mix and Rebar dependency import from `mix.lock` | Integration tested |
 | Compile/type/runtime dependency separation | Analysis and Dialyzer tested |
 | ExUnit sharding, EUnit, Common Test | Integration tested |

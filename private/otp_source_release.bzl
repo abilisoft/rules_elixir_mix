@@ -5,6 +5,7 @@ load("@rules_cc//cc:find_cc_toolchain.bzl", "CC_TOOLCHAIN_TYPE", "use_cc_toolcha
 load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
 load("//private:beam_info.bzl", "OtpInfo", "otp_runtime_env")
 load("//private:otp_crypto_sdk.bzl", "crypto_sdk_info")
+load("//private:runtime_archive_info.bzl", "BeamRuntimeSourceInfo")
 
 _DRIVER_EVAL = "A=init:get_plain_arguments(),[N,S|R]=A,{ok,artifact_normalizer,NB}=compile:file(N,[binary,report_errors,report_warnings]),{module,artifact_normalizer}=code:load_binary(artifact_normalizer,N,NB),C=compile:file(S,[binary,report_errors,report_warnings]),M=element(2,C),B=element(3,C),{module,M}=code:load_binary(M,S,B),M:main(R),halt()."
 _OTP_BUILD_EXEC_GROUP = "otp_build"
@@ -502,6 +503,12 @@ def _otp_source_release_impl(ctx):
     erlang_home_short_path = install.short_path + "/lib/erlang"
     return [
         DefaultInfo(files = runtime_files),
+        BeamRuntimeSourceInfo(
+            kind = "otp",
+            root = install,
+            root_relative_path = "lib/erlang",
+            version = ctx.attr.version,
+        ),
         OtpInfo(
             version = ctx.attr.version,
             crypto_sdk = crypto,

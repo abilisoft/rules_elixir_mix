@@ -31,7 +31,7 @@ module(
 
 bazel_dep(
     name = "rules_elixir_mix",
-    version = "0.0.0",
+    version = "0.1.0",
 )
 
 git_override(
@@ -73,6 +73,13 @@ platform(
 For remote execution, bind the platform to an immutable container image digest
 using the property understood by your executor. The name should describe the
 real libc/loader/NIF closure, not a wishful compatibility range.
+
+For Linux ARM64, define a separate platform using
+`@platforms//cpu:arm64`, a separately verified ARM64 `runtime_abi`, and ARM64
+runtime archives. Register both toolchain pairs when a repository builds on
+both architectures. With multiple tags, set exactly one tag's `default = True`
+and add `@elixir_config//:runtime_<tag_name>` to each matching platform so
+Bazel selects the intended tuple as well as the correct CPU and ABI.
 
 ## 3. Register OTP and Elixir
 

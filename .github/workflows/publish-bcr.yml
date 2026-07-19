@@ -1,0 +1,74 @@
+# SPDX-FileCopyrightText: 2026 AbiliSoft
+# SPDX-License-Identifier: Apache-2.0
+
+name: Publish to BCR
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: "Published signed version tag"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  verify-release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      tag_name: ${{ steps.release.outputs.tag_name }}
+    steps:
+      - name: Require a verified tag and published release
+        id: release
+        uses: actions/github-script@d746ffe35508b1917358783b479e04febd2b8f71 # v9.0.0
+        env:
+          TAG_NAME: ${{ inputs.tag_name }}
+        with:
+          script: |
+            const tagName = process.env.TAG_NAME;
+            const ref = await github.rest.git.getRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: `tags/${tagName}`,
+            });
+            if (ref.data.object.type !== "tag") {
+              core.setFailed(`${tagName} is not an annotated tag`);
+              return;
+            }
+            const tag = await github.rest.git.getTag({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag_sha: ref.data.object.sha,
+            });
+            if (!tag.data.verification?.verified) {
+              core.setFailed(`${tagName} is not cryptographically verified`);
+              return;
+            }
+            const release = await github.rest.repos.getReleaseByTag({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag: tagName,
+            });
+            if (release.data.draft) {
+              core.setFailed(`${tagName} is still a draft release`);
+              return;
+            }
+            core.setOutput("tag_name", tagName);
+
+  publish:
+    needs: verify-release
+    uses: bazel-contrib/publish-to-bcr/.github/workflows/publish.yaml@ad6879fd015a01c3e3b1b318fe3c061f928ac2fb # v1.4.2
+    permissions:
+      contents: write
+    with:
+      attest: false
+      download_default_release_artifacts: false
+      draft: false
+      open_pull_request: false
+      registry_fork: abilisoft/bazel-central-registry
+      tag_name: ${{ needs.verify-release.outputs.tag_name }}
+    secrets:
+      publish_token: ${{ secrets.BCR_PUBLISH_TOKEN }}

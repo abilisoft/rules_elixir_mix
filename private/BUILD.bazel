@@ -10,4 +10,5 @@ exports_files([
     "otp_build_driver.erl",
     "release_runtime_test.bzl",
     "release_runtime_test.erl",
+    "runtime_archive_driver.erl",
 ])

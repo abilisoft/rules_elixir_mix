@@ -1,0 +1,16 @@
+module(
+    name = "rules_elixir_mix_bcr_test",
+    version = "0.0.0",
+    bazel_compatibility = [">=9.2.0"],
+)
+
+bazel_dep(name = "rules_elixir_mix")
+local_path_override(
+    module_name = "rules_elixir_mix",
+    path = "../..",
+)
+
+register_toolchains(
+    "//:otp_toolchain",
+    "//:toolchain",
+)

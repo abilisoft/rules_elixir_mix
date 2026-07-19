@@ -89,6 +89,18 @@ artifact identity. Both paths require checksum-pinned archives and explicit
 platform constraints. See [Prebuilt toolchains](../prebuilt_toolchains.md) and
 [Source toolchains](../source_toolchains.md).
 
+For Linux x86-64 and ARM64 support, declare separate runtime archives,
+toolchain tags, and `runtime_abi` values. Never treat the same native BEAM or
+NIF artifact as compatible with both CPUs. Prefer native builders for each
+architecture; an emulated build is not equivalent evidence unless the project
+explicitly tests and supports that producer path.
+
+When an extension declares more than one toolchain tag, mark exactly one tag
+`default = True` and add its generated
+`@elixir_config//:runtime_<tag_name>` constraint value to the corresponding
+platform. Do not confuse this tuple-selection constraint with `runtime_abi`;
+both belong on the platform and answer different questions.
+
 Never use a host OTP, Elixir, Bash, Make, Perl, compiler, or OpenSSL as an
 undeclared fallback.
 

@@ -24,34 +24,83 @@ beam = use_extension(
 )
 
 beam.prebuilt_toolchain(
-    name = "linux_arm64",
+    name = "linux_x86_64",
     otp_version = "29.0.3",
-    otp_url = "https://artifacts.example/otp.tar.zst",
+    otp_url = "https://artifacts.example/otp-29.0.3-linux-x86_64.tar.gz",
     otp_sha256 = "...",
-    otp_strip_prefix = "otp",
+    otp_strip_prefix = "otp-29.0.3-linux-x86_64",
+    otp_type = "tar.gz",
     erlexec = "erts-17.0.3/bin/erlexec",
     elixir_version = "1.20.2",
-    elixir_url = "https://artifacts.example/elixir.tar.gz",
+    elixir_url = "https://artifacts.example/elixir-1.20.2-otp-29-linux-x86_64.tar.gz",
     elixir_sha256 = "...",
-    elixir_strip_prefix = "elixir",
-    elixir_home_marker = "bin/elixir",
+    elixir_strip_prefix = "elixir-1.20.2-otp-29-linux-x86_64",
+    elixir_type = "tar.gz",
+    elixir_home_marker = "bin/.runtime_root",
     bash = "@native_platform//:bash",
     make = "@native_platform//:make",
     perl = "@native_platform//:perl",
     posix_tools = ["@native_platform//:tools"],
     exec_compatible_with = [
-        "@platforms//cpu:arm64",
+        "@platforms//cpu:x86_64",
         "@platforms//os:linux",
     ],
-    runtime_abi = "//platforms:otp29_elixir120_glibc239_arm64",
+    runtime_abi = "//platforms:otp29_elixir120_glibc239_x86_64",
 )
 
 use_repo(beam, "elixir_config")
 register_toolchains(
-    "@elixir_config//linux_arm64:otp_toolchain",
-    "@elixir_config//linux_arm64:toolchain",
+    "@elixir_config//linux_x86_64:otp_toolchain",
+    "@elixir_config//linux_x86_64:toolchain",
 )
 ```
+
+Linux x86-64 (`@platforms//cpu:x86_64`) and Linux ARM64
+(`@platforms//cpu:arm64`) are maintained. The example shows one x86-64
+registration for readability. Register a second tag and toolchain pair with
+ARM64-specific URLs, SHA-256 values, `exec_compatible_with`, and `runtime_abi`;
+never reuse the x86-64 archive or ABI constraint. When multiple tags are
+registered, set exactly one `default = True` and put the generated
+`@elixir_config//:runtime_<tag_name>` constraint on each corresponding
+platform. The generated constraint chooses the requested tuple; the dedicated
+`runtime_abi` describes whether its native closure is actually compatible.
+macOS, Windows, and cross-compilation are not claimed.
+
+## Produce archives from a source toolchain
+
+`beam_runtime_archive` turns the `otp` and `runtime` targets emitted by a
+source toolchain into normalized `tar.gz` files. The source toolchain must use
+a declared `crypto_sdk`; the archive action uses that runtime's own `crypto`
+application to generate SHA-256 instead of discovering a host checksum tool.
+
+```starlark
+load("@rules_elixir_mix//:defs.bzl", "beam_runtime_archive")
+
+beam_runtime_archive(
+    name = "otp-29.0.3-linux-x86_64",
+    package_dir = "otp-29.0.3-linux-x86_64",
+    runtime = "@elixir_config//linux_x86_64_source:otp",
+)
+
+beam_runtime_archive(
+    name = "elixir-1.20.2-otp-29-linux-x86_64",
+    package_dir = "elixir-1.20.2-otp-29-linux-x86_64",
+    runtime = "@elixir_config//linux_x86_64_source:runtime",
+)
+```
+
+Each target emits the archive, a lowercase hexadecimal `.sha256`, and a
+`.metadata.json` file containing the version, strip prefix, archive type, and
+the marker paths required by `prebuilt_toolchain`. The action sorts archive
+entries, uses zero timestamps and numeric ownership, normalizes immutable file
+modes, rejects escaping symlinks, blocks network access, and never invokes a
+shell.
+
+Repeat both archive targets on each native producer platform. Publishing those
+files is a producer responsibility. For a FIPS archive, the
+release gate must also pass the crypto producer's provenance tests and
+`elixir_fips_runtime_test`; this ruleset does not turn a successful archive
+action into a backend certification. See [Publishing](publishing.md).
 
 ## Archive and platform contract
 
@@ -66,6 +115,10 @@ meaning.
 Mix actions do not execute `bin/elixir` or `bin/mix`; the marker is used only
 to derive the extracted Elixir root. Actions enter Elixir through the declared
 `erl` executable and the archive's BEAM libraries, avoiding shell launchers.
+
+Chrome and Postgres are not part of OTP/Elixir archives. Declare them only on
+`mix_wallaby_test` and `mix_ecto_test` targets that actually start those
+services.
 
 ## FIPS and native-package tools
 

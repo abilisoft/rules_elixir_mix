@@ -14,16 +14,19 @@ Hermetic, Mix-first Bazel rules for Elixir and Erlang/OTP applications,
 including Phoenix, LiveView, ExUnit, analysis, and releases.
 
 > [!IMPORTANT]
-> The project has not published its first stable release or official runtime
-> archive set. Pin a verified commit. Source builds can use the immutable,
+> The `0.1.0` BCR release is prepared but is not available until its signed tag
+> and registry entry are published. Until then, pin a verified commit. Source
+> builds can use the immutable,
 > latest-tested source catalog shipped with that commit; prebuilt runtimes must
 > still come from checksum-pinned producer archives. CI proves Bazel 9.2.0 and
-> the [catalog-default source tuple](bzlmod/versions.bzl) on Linux x86-64; it
-> does not imply support for an untested platform.
+> the [catalog-default source tuple](bzlmod/versions.bzl) on Linux x86-64 and
+> Linux ARM64; it does not imply support for an untested platform or runtime
+> ABI.
 
 [Get started](docs/getting_started.md) ·
 [Browse the docs](docs/README.md) ·
 [Choose a rule](docs/rules.md) ·
+[Publish](docs/publishing.md) ·
 [AI agent playbook](docs/agents/README.md)
 
 ## Why this exists

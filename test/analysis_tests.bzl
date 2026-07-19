@@ -2,7 +2,8 @@
 
 load("//bzlmod:mix_lock_test_support.bzl", "parse_mix_lock")
 load("//bzlmod:versions.bzl", "DEFAULT_ELIXIR_VERSION", "DEFAULT_OTP_VERSION", "known_source_versions", "resolve_source_release")
-load("//private:beam_info.bzl", "ErlangAppInfo", "crypto_runtime_files", "erl_env_flags", "fips_erl_args", "otp_runtime_env", "runtime_path_erl_args", "test_erl_launcher")
+load("//private:beam_info.bzl", "ErlangAppInfo", "OtpInfo", "crypto_runtime_files", "erl_env_flags", "fips_erl_args", "otp_runtime_env", "runtime_path_erl_args", "test_erl_launcher")
+load("//private:runtime_archive_info.bzl", "BeamRuntimeSourceInfo")
 
 _FINGERPRINT_EQUALITY_EVAL = "[L,R]=init:get_plain_arguments(),{ok,LB}=file:read_file(L),{ok,RB}=file:read_file(R),case LB=:=RB of true->halt(0);false->io:format(standard_error,\"compiled artifact fingerprints differ: ~ts ~ts~n\",[L,R]),halt(1) end."
 
@@ -148,6 +149,31 @@ def _fake_executable_impl(ctx):
     return [DefaultInfo(executable = output, files = depset([output]))]
 
 fake_executable = rule(implementation = _fake_executable_impl, executable = True)
+
+def _fake_runtime_source_impl(ctx):
+    roots = ctx.attr.root[DefaultInfo].files.to_list()
+    if len(roots) != 1 or not roots[0].is_directory:
+        fail("fake_runtime_source root must contain exactly one directory artifact")
+    return [
+        DefaultInfo(files = depset(roots, transitive = [ctx.attr.otp[DefaultInfo].files])),
+        ctx.attr.otp[OtpInfo],
+        BeamRuntimeSourceInfo(
+            kind = ctx.attr.kind,
+            root = roots[0],
+            root_relative_path = "",
+            version = ctx.attr.version,
+        ),
+    ]
+
+fake_runtime_source = rule(
+    implementation = _fake_runtime_source_impl,
+    attrs = {
+        "kind": attr.string(mandatory = True, values = ["otp", "elixir"]),
+        "otp": attr.label(mandatory = True, providers = [OtpInfo]),
+        "root": attr.label(mandatory = True),
+        "version": attr.string(mandatory = True),
+    },
+)
 
 def _generated_file_impl(ctx):
     output = ctx.actions.declare_file(ctx.attr.filename)

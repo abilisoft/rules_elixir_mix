@@ -5,7 +5,7 @@ module(
 )
 
 bazel_dep(name = "platforms", version = "1.1.0")
-bazel_dep(name = "rules_elixir_mix", version = "0.0.0")
+bazel_dep(name = "rules_elixir_mix", version = "0.1.0")
 local_path_override(
     module_name = "rules_elixir_mix",
     path = "..",
@@ -16,32 +16,57 @@ elixir_config = use_extension(
     "elixir_config",
 )
 elixir_config.prebuilt_toolchain(
-    name = "otp29_elixir120",
-    elixir_sha256 = "cfdff0575134c095ef558c456df049864e0bb8e66ec61451ce9e77f0df3fcddd",
+    name = "otp29_elixir120_x86_64",
+    default = True,
+    elixir_sha256 = "23ad3e0623bb22d21385bb7bcb8d36dc914637838fb04c2c6ddcad4f77917e8d",
     elixir_type = "tar.gz",
-    elixir_url = "file:///tmp/rules-elixir-mix-ci-elixir-with-version.tar.gz",
+    elixir_url = "file:///tmp/rules-elixir-mix-ci-elixir-x86_64.tar.gz",
     elixir_version = "1.20.2",
     erlexec = "erts-17.0.3/bin/erlexec",
     exec_compatible_with = [
         "@platforms//cpu:x86_64",
         "@platforms//os:linux",
     ],
-    otp_sha256 = "959b4144e47d992aa6fd08a8f4d8b21d4a6ba36dd67a61490715140796a2f9f6",
+    otp_sha256 = "a636ad0585b0fe85a5dfa165ba23a9c81a67cadfdd6e2a732a1cc50c51766bcf",
     otp_type = "tar.gz",
-    otp_url = "file:///tmp/rules-elixir-mix-ci-otp-container.tar.gz",
+    otp_url = "file:///tmp/rules-elixir-mix-ci-otp-x86_64.tar.gz",
     otp_version = "29.0.3",
-    runtime_abi = "//:hexpm_elixir_otp29_elixir120",
+    runtime_abi = "//:elixir_otp29_elixir120_x86_64",
+)
+elixir_config.prebuilt_toolchain(
+    name = "otp29_elixir120_arm64",
+    elixir_sha256 = "0f6975723ff889cc16383a14528121335ada25169d2a066631d03f17d75989fb",
+    elixir_type = "tar.gz",
+    elixir_url = "file:///tmp/rules-elixir-mix-ci-elixir-arm64.tar.gz",
+    elixir_version = "1.20.2",
+    erlexec = "erts-17.0.3/bin/erlexec",
+    exec_compatible_with = [
+        "@platforms//cpu:arm64",
+        "@platforms//os:linux",
+    ],
+    otp_sha256 = "0eb1e99573b630cbbc9c7ee1e6126b083556374f9582e6874f70bfa650231fd6",
+    otp_type = "tar.gz",
+    otp_url = "file:///tmp/rules-elixir-mix-ci-otp-arm64.tar.gz",
+    otp_version = "29.0.3",
+    runtime_abi = "//:elixir_otp29_elixir120_arm64",
 )
 use_repo(elixir_config, "elixir_config")
 
 register_toolchains(
-    "@elixir_config//otp29_elixir120:otp_toolchain",
-    "@elixir_config//otp29_elixir120:toolchain",
+    "@elixir_config//otp29_elixir120_arm64:otp_toolchain",
+    "@elixir_config//otp29_elixir120_arm64:toolchain",
+    "@elixir_config//otp29_elixir120_x86_64:otp_toolchain",
+    "@elixir_config//otp29_elixir120_x86_64:toolchain",
 )
 
-register_execution_platforms("//:ci_execution_platform")
-
 http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
+
+http_file(
+    name = "lazy_html_nif_arm64_linux_gnu",
+    downloaded_file_path = "lazy_html-nif-2.16-aarch64-linux-gnu-0.1.11.tar.gz",
+    sha256 = "243f5efa6a9f7270bae191cd23a132263f7fee0ae8d42b016dd7e34617840aeb",
+    urls = ["https://github.com/dashbitco/lazy_html/releases/download/v0.1.11/lazy_html-nif-2.16-aarch64-linux-gnu-0.1.11.tar.gz"],
+)
 
 http_file(
     name = "lazy_html_nif_x86_64_linux_gnu",
@@ -58,7 +83,7 @@ elixir_packages.mix_lock(
     name = "mix_deps",
     lockfile = "//:mix.lock",
     precompiled_native_artifacts = {
-        "lazy_html": "@lazy_html_nif_x86_64_linux_gnu//file",
+        "lazy_html": "//:lazy_html_nif",
     },
 )
 use_repo(elixir_packages, "hex_pm", "mix_deps")
