@@ -6,6 +6,8 @@ SPDX-License-Identifier: Apache-2.0
 # rules_elixir_mix
 
 [![CI](https://github.com/abilisoft/rules_elixir_mix/actions/workflows/test.yaml/badge.svg)](https://github.com/abilisoft/rules_elixir_mix/actions/workflows/test.yaml)
+[![CodeQL](https://github.com/abilisoft/rules_elixir_mix/actions/workflows/codeql.yml/badge.svg)](https://github.com/abilisoft/rules_elixir_mix/actions/workflows/codeql.yml)
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/abilisoft/rules_elixir_mix/badge)](https://securityscorecards.dev/viewer/?uri=github.com/abilisoft/rules_elixir_mix)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
 Hermetic, Mix-first Bazel rules for Elixir and Erlang/OTP applications,
