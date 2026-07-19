@@ -18,7 +18,7 @@ elixir_config = use_extension(
 elixir_config.prebuilt_toolchain(
     name = "otp29_elixir120_x86_64",
     default = True,
-    elixir_sha256 = "23ad3e0623bb22d21385bb7bcb8d36dc914637838fb04c2c6ddcad4f77917e8d",
+    elixir_sha256 = "a5fadcf05c64c3ced4486ed867a49f240083db8066f219ad958e8f93a4f52120",
     elixir_type = "tar.gz",
     elixir_url = "file:///tmp/rules-elixir-mix-ci-elixir-x86_64.tar.gz",
     elixir_version = "1.20.2",
@@ -35,7 +35,7 @@ elixir_config.prebuilt_toolchain(
 )
 elixir_config.prebuilt_toolchain(
     name = "otp29_elixir120_arm64",
-    elixir_sha256 = "0f6975723ff889cc16383a14528121335ada25169d2a066631d03f17d75989fb",
+    elixir_sha256 = "fa843c8ed54cb4f8c9bda88f9650726f6ec7f712cb0d33aebe82cae8bc627cce",
     elixir_type = "tar.gz",
     elixir_url = "file:///tmp/rules-elixir-mix-ci-elixir-arm64.tar.gz",
     elixir_version = "1.20.2",
