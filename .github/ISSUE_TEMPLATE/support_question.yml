@@ -1,0 +1,54 @@
+# SPDX-FileCopyrightText: 2026 AbiliSoft
+# SPDX-License-Identifier: Apache-2.0
+
+name: Usage question
+description: Ask for help modeling a supported Bazel, OTP, Elixir, Mix, or Phoenix workflow.
+title: "question: "
+labels:
+  - question
+body:
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I read the documentation map and the guide for this area.
+          required: true
+        - label: I searched existing issues.
+          required: true
+        - label: I removed credentials, proprietary source, and personal information.
+          required: true
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: What are you trying to build, test, analyze, run, or release?
+    validations:
+      required: true
+  - type: textarea
+    id: model
+    attributes:
+      label: Current Bazel model
+      description: Include the relevant module extension, toolchain, rule targets, and dependency edges.
+      render: starlark
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      placeholder: rules revision; Bazel; OTP; Elixir
+    validations:
+      required: true
+  - type: textarea
+    id: attempted
+    attributes:
+      label: What you tried
+      description: Include commands, documentation followed, and exact diagnostics.
+    validations:
+      required: true
+  - type: textarea
+    id: constraints
+    attributes:
+      label: Platform and constraints
+      description: Mention OS, CPU, runtime ABI, remote execution, native dependencies, databases, browsers, or FIPS requirements.

@@ -1,4 +1,19 @@
+<!--
+SPDX-FileCopyrightText: 2026 AbiliSoft
+SPDX-License-Identifier: Apache-2.0
+-->
+
 # Source toolchains
+
+[Documentation home](README.md) · [Getting started](getting_started.md) ·
+[Prebuilt toolchains](prebuilt_toolchains.md) ·
+[Agent playbook](agents/README.md)
+
+Use this path when OTP configure flags, the selected C/C++ toolchain, or a
+crypto SDK must be part of the runtime artifact. Build a variant once, publish
+it by digest, and prefer the prebuilt path for repeated consumers.
+
+## Build contract
 
 `source_toolchain` builds Erlang/OTP through its upstream `configure` and
 `make install` interface. The Bazel rule itself is Starlark and its action
@@ -34,6 +49,8 @@ those components. It consumes their Bazel targets while building pristine OTP
 and Elixir sources. This prevents a second, subtly different libc or crypto
 build from appearing here.
 
+## Native tool handoff
+
 The source toolchain's declared Bash, Make, Perl, and POSIX targets are also
 attached to the generated Elixir toolchain for selective native Hex builds.
 They are not added to ordinary Mix actions. A package explicitly marked
@@ -48,6 +65,8 @@ preserving those links would allow upstream configure or Make steps to mutate
 declared inputs. A Starlark repository rule also records empty directories from
 the checksum-pinned archive so the staged source topology matches upstream
 without shell traversal.
+
+## Crypto selection
 
 A source toolchain without `crypto_sdk` configures OTP with `--without-ssl`.
 This prevents `configure` from discovering a host OpenSSL installation. Source

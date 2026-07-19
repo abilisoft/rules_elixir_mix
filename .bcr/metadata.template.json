@@ -1,14 +1,14 @@
 {
-  "homepage": "https://github.com/silkrad/rules_elixir_mix",
+  "homepage": "https://github.com/abilisoft/rules_elixir_mix",
   "maintainers": [
     {
-      "email": "rules-elixir-mix@users.noreply.github.com",
-      "github": "silkrad",
-      "name": "rules_elixir_mix maintainers"
+      "email": "support@abilisoft.com",
+      "github": "abilisoft",
+      "name": "AbiliSoft"
     }
   ],
   "repository": [
-    "github:silkrad/rules_elixir_mix"
+    "github:abilisoft/rules_elixir_mix"
   ],
   "versions": [],
   "yanked_versions": {}

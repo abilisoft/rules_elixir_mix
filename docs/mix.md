@@ -1,4 +1,18 @@
+<!--
+SPDX-FileCopyrightText: 2026 AbiliSoft
+SPDX-License-Identifier: Apache-2.0
+-->
+
 # Mix rules
+
+[Documentation home](README.md) · [Getting started](getting_started.md) ·
+[Rule catalog](rules.md) · [Agent playbook](agents/README.md)
+
+Use this guide after the OTP/Elixir toolchain and `mix.lock` import resolve.
+It explains how application inputs, dependency edges, tests, native packages,
+Phoenix assets, and writable developer workflows fit into the Bazel graph.
+
+## Application compilation
 
 `mix_library` invokes Mix directly through the selected Elixir toolchain. It
 sets action-local Mix/Hex/home directories, disables dependency fetching, and
@@ -33,6 +47,8 @@ Important attributes:
 
 All inputs must be declared. Network access during compilation and tests is a
 build error; add packages to `mix.lock` instead of calling `mix deps.get`.
+
+## Native dependencies
 
 Native dependencies stay selective for cache performance. Prefer an upstream
 precompiled NIF when the producer publishes one for the exact OTP NIF ABI,
@@ -81,6 +97,8 @@ matching Bazel C/C++ toolchain must resolve on the same execution platform.
 `rules_elixir_mix` only consumes it. There is no fallback to `/usr/bin`, the
 host `PATH`, a host compiler, or a host crypto library.
 
+## Tests and analysis
+
 `mix_test` shards `_test.exs` inputs deterministically with Bazel's standard
 test shard variables. `dialyzer_plt` builds a separate cacheable PLT artifact;
 pass it to `elixir_dialyzer_test`. `mix_dialyzer_test` is the distinct
@@ -114,6 +132,8 @@ Framework and analysis helpers remain thin symbolic macros over that graph:
   to stable project-relative `priv/static/...` destinations with
   `elixir_generated_source`, then pass those mappings through
   `generated_srcs`; `srcs` is for files already below the Mix source root.
+
+## Phoenix and local development
 
 Writable Phoenix servers, code reloaders, and generators are intentionally
 outside hermetic build actions. `mix_local` and `mix_phx_server` are explicit
