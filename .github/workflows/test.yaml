@@ -222,3 +222,54 @@ jobs:
           ${BAZEL_PLATFORM_FLAGS}
           --remote_header=x-buildbuddy-api-key="${BUILDBUDDY_ORG_API_KEY}"
           @elixir_config//catalog_source_${{ matrix.arch }}:runtime
+
+  validate-gate:
+    name: validate
+    needs: validate
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Require every validation architecture
+        uses: actions/github-script@d746ffe35508b1917358783b479e04febd2b8f71 # v9.0.0
+        env:
+          MATRIX_RESULT: ${{ needs.validate.result }}
+        with:
+          script: |
+            if (process.env.MATRIX_RESULT !== "success") {
+              core.setFailed(`validation matrix ended with ${process.env.MATRIX_RESULT}`);
+            }
+
+  integration-gate:
+    name: integration
+    needs: integration
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Require every integration architecture
+        uses: actions/github-script@d746ffe35508b1917358783b479e04febd2b8f71 # v9.0.0
+        env:
+          MATRIX_RESULT: ${{ needs.integration.result }}
+        with:
+          script: |
+            if (process.env.MATRIX_RESULT !== "success") {
+              core.setFailed(`integration matrix ended with ${process.env.MATRIX_RESULT}`);
+            }
+
+  source-toolchain-gate:
+    name: source-toolchain
+    needs: source-toolchain
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Require every source-toolchain architecture
+        uses: actions/github-script@d746ffe35508b1917358783b479e04febd2b8f71 # v9.0.0
+        env:
+          MATRIX_RESULT: ${{ needs.source-toolchain.result }}
+        with:
+          script: |
+            if (process.env.MATRIX_RESULT !== "success") {
+              core.setFailed(`source-toolchain matrix ended with ${process.env.MATRIX_RESULT}`);
+            }
