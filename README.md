@@ -30,6 +30,18 @@ shell actions. OTP source construction uses an Erlang action driver to invoke
 declared Bash and Make executables because those are OTP's upstream build
 interface. It does not generate or maintain a shell wrapper.
 
+## Continuous integration
+
+GitHub Actions runs validation, integration, and pristine source-toolchain
+checks. Bazel streams those invocations to BuildBuddy and uses its remote cache
+and execution service. The workflow reads authentication from the
+`BUILDBUDDY_ORG_API_KEY` GitHub secret; no API key is stored in source control.
+
+The integration and source-build execution platforms use digest-pinned
+HexPM/Elixir and Erlang images. Workflow bootstrap archives are produced from
+those same immutable images before Bazel starts; all compilation and test
+actions then run under Bazel's declared platform and toolchain contracts.
+
 ## Toolchain
 
 Build OTP 29 from source when its native/crypto configuration is part of the

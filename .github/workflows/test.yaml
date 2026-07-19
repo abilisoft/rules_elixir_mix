@@ -8,6 +8,9 @@ on:
 permissions:
   contents: read
 
+env:
+  BUILDBUDDY_ORG_API_KEY: ${{ secrets.BUILDBUDDY_ORG_API_KEY }}
+
 jobs:
   validate:
     runs-on: ubuntu-24.04
@@ -20,10 +23,14 @@ jobs:
           disk-cache: true
           repository-cache: true
       - name: Validate Starlark
-        run: bazel test //:buildifier_test
+        run: >-
+          bazel test
+          --remote_header=x-buildbuddy-api-key="${BUILDBUDDY_ORG_API_KEY}"
+          //:buildifier_test
       - name: Analyze public rule surface
         run: >-
           bazel build --nobuild
+          --remote_header=x-buildbuddy-api-key="${BUILDBUDDY_ORG_API_KEY}"
           //test:analysis_fixture
           //test:analysis_test_lib
           //test:common_test_analysis_fixture
@@ -50,6 +57,7 @@ jobs:
       - name: Analyze FIPS and provider runtime surface
         run: >-
           bazel build --nobuild
+          --remote_header=x-buildbuddy-api-key="${BUILDBUDDY_ORG_API_KEY}"
           --extra_toolchains=//test:fips_otp_toolchain,//test:fips_toolchain
           //test:fips_analysis_fixture
           //test:fips_release_analysis_fixture
@@ -76,6 +84,7 @@ jobs:
         working-directory: integration
         run: |
           bazel test \
+            --remote_header=x-buildbuddy-api-key="${BUILDBUDDY_ORG_API_KEY}" \
             //:coverage \
             //:credo \
             //:dialyzer \
@@ -91,16 +100,16 @@ jobs:
             //:type_deps_dialyzer \
             //:xref \
             //dialyzer_fixture:dialyzer
-          bazel test --test_sharding_strategy=forced=2 //:test
-          bazel build //:digested_assets
+          bazel test --remote_header=x-buildbuddy-api-key="${BUILDBUDDY_ORG_API_KEY}" --test_sharding_strategy=forced=2 //:test
+          bazel build --remote_header=x-buildbuddy-api-key="${BUILDBUDDY_ORG_API_KEY}" //:digested_assets
           test ! -e bazel-bin/lib_compile_build/.rules_elixir_mix_state
       - name: Exercise the writable local cache twice
         working-directory: integration
         run: |
-          bazel run //:local
-          RULES_ELIXIR_MIX_REQUIRE_WARM_CACHE=true bazel run //:local
+          bazel run --remote_header=x-buildbuddy-api-key="${BUILDBUDDY_ORG_API_KEY}" //:local
+          RULES_ELIXIR_MIX_REQUIRE_WARM_CACHE=true bazel run --remote_header=x-buildbuddy-api-key="${BUILDBUDDY_ORG_API_KEY}" //:local
           test ! -e lib/integration/generated_by_bazel.ex
-          bazel test //:format //:typecheck //:xref
+          bazel test --remote_header=x-buildbuddy-api-key="${BUILDBUDDY_ORG_API_KEY}" //:format //:typecheck //:xref
 
   source-toolchain:
     runs-on: ubuntu-24.04
@@ -121,4 +130,7 @@ jobs:
           -C /usr/local/lib/erlang .
       - name: Build OTP 29.0.3 and Elixir 1.20.2 from pristine sources
         working-directory: source_integration
-        run: bazel build @elixir_config//otp29_elixir120_source:runtime
+        run: >-
+          bazel build
+          --remote_header=x-buildbuddy-api-key="${BUILDBUDDY_ORG_API_KEY}"
+          @elixir_config//otp29_elixir120_source:runtime
