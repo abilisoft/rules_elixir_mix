@@ -148,8 +148,7 @@ and CSS compilation belongs to the corresponding Bazel ecosystem rules;
 Native and crypto artifacts come from declared producers. This repository can
 consume a normalized crypto SDK while building pristine OTP, propagate
 FIPS-required runtime activation, and test the shared OTP behavior. It does not
-fetch, patch, certify, or silently choose BoringCrypto, BoringSSL, OpenSSL, or
-another backend. See the
+fetch, patch, certify, or silently choose a crypto backend. See the
 [backend-neutral crypto SDK contract](docs/source_toolchains.md#backend-neutral-crypto-sdk).
 
 ## Documentation
