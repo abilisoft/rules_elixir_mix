@@ -4,9 +4,17 @@ on:
   pull_request:
   push:
     branches: [main]
+  merge_group:
+  schedule:
+    - cron: "20 5 * * 1"
+  workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 env:
   BUILDBUDDY_ORG_API_KEY: ${{ secrets.BUILDBUDDY_ORG_API_KEY }}
@@ -17,8 +25,11 @@ env:
 jobs:
   validate:
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
       - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
         with:
           bazelisk-version: 1.29.0
@@ -71,10 +82,13 @@ jobs:
 
   integration:
     runs-on: ubuntu-24.04
+    timeout-minutes: 90
     container:
       image: hexpm/elixir@sha256:50b4199b1b892d140add53647af4c8e593c441ee8320f168f5eb66a5032d7379
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
       - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
         with:
           bazelisk-version: 1.29.0
@@ -120,10 +134,13 @@ jobs:
 
   source-toolchain:
     runs-on: ubuntu-24.04
+    timeout-minutes: 180
     container:
       image: erlang@sha256:ec20ffd1224a25f6105eec70a684fd2d7f2cf83084dedb669346644bcee4c466
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
       - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
         with:
           bazelisk-version: 1.29.0
