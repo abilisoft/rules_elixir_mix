@@ -20,8 +20,9 @@ your execution platform.
 
 ## 1. Pin the ruleset
 
-The first stable BCR version has not been released. Until then, use a full
-GitHub-verified commit SHA:
+The signed [`v0.1.0` GitHub release](https://github.com/abilisoft/rules_elixir_mix/releases/tag/v0.1.0)
+is intentionally not published to BCR yet. Consume it through the full,
+GitHub-verified commit referenced by that tag:
 
 ```starlark
 module(
@@ -37,14 +38,16 @@ bazel_dep(
 git_override(
     module_name = "rules_elixir_mix",
     remote = "https://github.com/abilisoft/rules_elixir_mix.git",
-    commit = "<full-verified-commit-sha>",
+    commit = "ea6194a031302ee7a1a40539cd78f3f280d3bfd3",
 )
 
 bazel_dep(name = "platforms", version = "1.1.0")
 ```
 
-Replace the placeholder rather than tracking a branch. Repository downloads,
-toolchains, and package archives must remain content-addressed.
+That commit is the immutable target of the verified `v0.1.0` tag. For a later
+release, replace both the declared version and commit with that release's
+values. Never track a branch or movable tag. Repository downloads, toolchains,
+and package archives must remain content-addressed.
 
 ## 2. Name the runtime ABI
 
