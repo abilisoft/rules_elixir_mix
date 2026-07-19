@@ -4,7 +4,7 @@ load("@rules_elixir_mix//:defs.bzl", "mix_format_test", "mix_library", "mix_rele
 mix_library(
     name = "basic",
     srcs = glob(["lib/**/*.ex"]),
-    app_name = "main",
+    app_name = "basic",
     mix_config = ":mix.exs",
 )
 
@@ -12,7 +12,7 @@ mix_library(
 mix_library(
     name = "basic_test_lib",
     srcs = glob(["lib/**/*.ex"]),
-    app_name = "main",
+    app_name = "basic",
     mix_config = ":mix.exs",
     mix_env = "test",
 )
@@ -35,6 +35,6 @@ mix_format_test(
 
 mix_release(
     name = "basic_release",
-    app_name = "main",
+    app_name = "basic",
     application = ":basic",
 )

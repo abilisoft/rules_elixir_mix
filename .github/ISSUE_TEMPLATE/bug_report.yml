@@ -1,0 +1,89 @@
+# SPDX-FileCopyrightText: 2026 AbiliSoft
+# SPDX-License-Identifier: Apache-2.0
+
+name: Bug report
+description: Report reproducible incorrect rule, toolchain, cache, or runtime behavior.
+title: "bug: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Reduce the problem to the smallest public Bazel target you can. Do not include credentials or private source.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and documentation.
+          required: true
+        - label: This is not a security report; security issues use private vulnerability reporting.
+          required: true
+        - label: The reproducer does not depend on an undeclared host OTP, Elixir, compiler, crypto library, or network fetch.
+          required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area
+      options:
+        - Bzlmod and mix.lock import
+        - OTP or Elixir toolchain
+        - Mix or Erlang compilation
+        - ExUnit, EUnit, or Common Test
+        - Dialyzer, type checking, formatting, Credo, Sobelow, or Xref
+        - Phoenix, LiveView, assets, release, or local workflow
+        - Ecto, Postgres, Wallaby, or browser tooling
+        - Native dependency, NIF, runtime ABI, crypto, or FIPS
+        - Caching, remote execution, runfiles, or reproducibility
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: revision
+    attributes:
+      label: rules_elixir_mix revision
+      description: Release, tag, or full verified commit SHA.
+      placeholder: Full commit SHA
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Bazel, OTP, and Elixir versions
+      placeholder: Bazel 9.2.0; OTP 29.0.3; Elixir 1.20.2
+    validations:
+      required: true
+  - type: textarea
+    id: platform
+    attributes:
+      label: Execution and target platform
+      description: Include OS, CPU, libc/runtime ABI constraint, container image digest, and remote executor when relevant.
+    validations:
+      required: true
+  - type: textarea
+    id: reproducer
+    attributes:
+      label: Minimal reproducer
+      description: Provide the smallest MODULE.bazel, BUILD target, source input, and command that demonstrate the issue.
+      render: starlark
+    validations:
+      required: true
+  - type: textarea
+    id: observed
+    attributes:
+      label: Observed behavior
+      description: Include complete Bazel diagnostics and whether a second identical invocation changed the result.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Additional context
+      description: Mention regressions, suspected cache keys, native dependencies, or relevant BuildBuddy invocation links.

@@ -1,4 +1,11 @@
+<!--
+SPDX-FileCopyrightText: 2026 AbiliSoft
+SPDX-License-Identifier: Apache-2.0
+-->
+
 # Attribution
+
+[Documentation home](README.md) · [License](../LICENSE) · [Notice](../NOTICE)
 
 The project began from the RabbitMQ and Discord `rules_elixir` implementations
 and studied RabbitMQ's `rules_erlang` provider and Hex repository patterns:

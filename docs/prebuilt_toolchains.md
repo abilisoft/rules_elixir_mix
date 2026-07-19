@@ -1,4 +1,15 @@
+<!--
+SPDX-FileCopyrightText: 2026 AbiliSoft
+SPDX-License-Identifier: Apache-2.0
+-->
+
 # Prebuilt toolchains
+
+[Documentation home](README.md) · [Getting started](getting_started.md) ·
+[Source toolchains](source_toolchains.md) · [Agent playbook](agents/README.md)
+
+Use this path when a producer already supplies verified OTP and Elixir archives
+for the exact execution platform. It is the normal low-latency CI path.
 
 A prebuilt toolchain is a pair of checksum-pinned archives: one OTP runtime and
 one Elixir runtime built for that OTP version. Archives must already be usable
@@ -42,6 +53,8 @@ register_toolchains(
 )
 ```
 
+## Archive and platform contract
+
 The archive checksum and every runtime file are action inputs, so OTP/Elixir
 changes invalidate the relevant cache entries. `runtime_abi` is a mandatory,
 dedicated constraint value that must also appear on the selected execution
@@ -53,6 +66,8 @@ meaning.
 Mix actions do not execute `bin/elixir` or `bin/mix`; the marker is used only
 to derive the extracted Elixir root. Actions enter Elixir through the declared
 `erl` executable and the archive's BEAM libraries, avoiding shell launchers.
+
+## FIPS and native-package tools
 
 Prebuilt FIPS runtimes must declare `fips = "required"`,
 `static_crypto_nif = True`, and the same `crypto_sdk` contract as source

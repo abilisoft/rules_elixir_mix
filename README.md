@@ -1,172 +1,77 @@
+<!--
+SPDX-FileCopyrightText: 2026 AbiliSoft
+SPDX-License-Identifier: Apache-2.0
+-->
+
 # rules_elixir_mix
 
 [![CI](https://github.com/abilisoft/rules_elixir_mix/actions/workflows/test.yaml/badge.svg)](https://github.com/abilisoft/rules_elixir_mix/actions/workflows/test.yaml)
-[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](./LICENSE)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
-Hermetic, Mix-first Bazel rules for Elixir, Phoenix, LiveView, and ExUnit.
+Hermetic, Mix-first Bazel rules for Elixir and Erlang/OTP applications,
+including Phoenix, LiveView, ExUnit, analysis, and releases.
 
-This ruleset is Bzlmod-only and targets Bazel 9.2.0 or newer. The checked-in
-`.bazelversion` pins the current Bazel 9 LTS release for Bazelisk.
+> [!IMPORTANT]
+> The project has not published its first stable release or official runtime
+> archive set. Pin a verified commit and provide checksum-pinned OTP and Elixir
+> archives. CI currently proves Bazel 9.2.0 with OTP 29.0.3 and Elixir 1.20.2
+> on Linux x86-64; it does not imply support for an untested platform.
 
-The design is deliberately small:
+[Get started](docs/getting_started.md) ·
+[Browse the docs](docs/README.md) ·
+[Choose a rule](docs/rules.md) ·
+[AI agent playbook](docs/agents/README.md)
 
-- Bazel owns pinned inputs, OTP+Elixir toolchains, isolation, and caching.
-- Mix owns Elixir/Erlang compilation, compiler plugins, ExUnit, and releases.
-- Hex packages come from `mix.lock` and are downloaded by checksum.
-- Phoenix, LiveView, Wallaby, Credo, Dialyxir, and Sobelow are ordinary Mix
-  dependencies—not toolchains.
-- OTP can be built from source with a declared C/C++ toolchain and declared
-  bootstrap tools, or consumed as a checksum-pinned prebuilt runtime.
-- An OTP source build may consume an optional generic static crypto SDK.
-  Building, validating, and certifying that SDK belongs to its producer (for
-  example, `rules_fips`), not to this repository. That producer may also own
-  the matching musl/glibc C/C++ and POSIX execution-tool closure.
-- FIPS-required SDKs may be fully static or carry a normalized provider
-  runtime/activation contract; rules never branch on backend identity.
+## Why this exists
 
-Rule implementations are Starlark. They invoke declared Elixir/Erlang
-executables directly; ordinary Mix actions have no generated shell scripts or
-shell actions. OTP source construction uses an Erlang action driver to invoke
-declared Bash and Make executables because those are OTP's upstream build
-interface. It does not generate or maintain a shell wrapper.
+Running an entire Mix project in one giant Bazel action produces one giant
+cache entry and hides the real build graph. `rules_elixir_mix` models one OTP
+application at a time, resolves OTP and Elixir through Bazel toolchains, and
+turns locked packages, tools, generated sources, `priv`, tests, and releases
+into declared inputs and outputs.
 
-## Continuous integration
-
-GitHub Actions runs validation, integration, and pristine source-toolchain
-checks. Bazel streams those invocations to BuildBuddy and uses its remote cache
-and execution service. The workflow reads authentication from the
-`BUILDBUDDY_ORG_API_KEY` GitHub secret; no API key is stored in source control.
-Fork pull requests do not receive that secret, so their required checks
-explicitly disable the remote services and execute with Bazel's local sandbox.
-
-The integration and source-build execution platforms use digest-pinned
-HexPM/Elixir and Erlang images. Workflow bootstrap archives are produced from
-those same immutable images before Bazel starts; all compilation and test
-actions then run under Bazel's declared platform and toolchain contracts.
-
-## Toolchain
-
-Build OTP 29 from source when its native/crypto configuration is part of the
-artifact identity:
-
-```starlark
-elixir_config = use_extension(
-    "@rules_elixir_mix//bzlmod:toolchains.bzl",
-    "elixir_config",
-)
-elixir_config.source_toolchain(
-    name = "linux_x86_64",
-    bootstrap_otp_version = "29.0.3",
-    bootstrap_otp_url = "https://artifacts.example/otp-bootstrap.tar.zst",
-    bootstrap_otp_sha256 = "...",
-    bootstrap_erlexec = "erts-17.0.3/bin/erlexec",
-    otp_version = "29.0.3",
-    otp_url = "https://github.com/erlang/otp/releases/download/OTP-29.0.3/otp_src_29.0.3.tar.gz",
-    otp_sha256 = "...",
-    otp_strip_prefix = "otp_src_29.0.3",
-    elixir_version = "1.20.2",
-    elixir_url = "https://github.com/elixir-lang/elixir/archive/refs/tags/v1.20.2.tar.gz",
-    elixir_sha256 = "...",
-    elixir_strip_prefix = "elixir-1.20.2",
-    bash = "@hermetic_posix//:bash",
-    make = "@hermetic_posix//:make",
-    perl = "@hermetic_posix//:perl",
-    posix_tools = ["@hermetic_posix//:tools"],
-    exec_compatible_with = [
-        "@platforms//cpu:x86_64",
-        "@platforms//os:linux",
-    ],
-    runtime_abi = "//platforms:otp29_elixir120_glibc239",
-)
-use_repo(elixir_config, "elixir_config")
-register_toolchains(
-    "@elixir_config//linux_x86_64:otp_toolchain",
-    "@elixir_config//linux_x86_64:toolchain",
-)
+```mermaid
+flowchart LR
+    lock["mix.lock"] --> packages["immutable package repositories"]
+    runtime["OTP + Elixir toolchain"] --> app["mix_library / erlang_app"]
+    packages --> app
+    source["sources + config + priv"] --> app
+    app --> checks["ExUnit + analysis"]
+    app --> release["mix_release"]
 ```
 
-The bootstrap runtime is only the declared executable for the Erlang build
-driver; the registered runtime is the OTP output built from `otp_url`. The
-selected Bazel C/C++ toolchain, Bash, Make, POSIX tools, source archives, and
-bootstrap runtime are all action inputs. There is no host-runtime mode.
+Bazel owns downloads, checksums, tools, platforms, isolation, and cache keys.
+Mix owns Elixir compilation semantics, compiler plugins, ExUnit, and release
+assembly. Phoenix and LiveView remain ordinary locked Mix dependencies—not
+toolchains.
 
-For the fastest CI and remote execution path, publish that result once and use
-checksum-pinned, already-extracted OTP and Elixir archives:
+## What you can model
 
-```starlark
-bazel_dep(name = "platforms", version = "1.1.0")
+| Area | Public surfaces |
+| --- | --- |
+| Elixir and Erlang applications | `mix_library`, `erlang_app`, `rebar_library` |
+| Locked dependencies | Bzlmod import from `mix.lock`, including Mix and Rebar packages |
+| Dependency semantics | Separate compile, type, and runtime edges |
+| Generated/runtime content | Generated source mappings, `priv`, NIFs, protocol consolidation |
+| Tests | ExUnit sharding, EUnit, Common Test, Ecto/Postgres, Wallaby |
+| Analysis | format, Elixir 1.20+ type analysis, Dialyzer PLTs, Credo, Sobelow, Xref, coverage |
+| Phoenix | digestible assets, releases, local server/code-reload workflows |
+| Developer workflows | IEx, generators, Phoenix server, and ElixirLS over the same graph |
+| OTP and Elixir | Checksum-pinned prebuilt archives or pristine source builds |
+| Crypto/FIPS | Backend-neutral consumption of a producer-owned crypto SDK |
 
-elixir_config.prebuilt_toolchain(
-    name = "linux_x86_64",
-    otp_version = "29.0.3",
-    otp_url = "https://artifacts.example/otp-29.0.3-linux-x86_64.tar.zst",
-    otp_sha256 = "...",
-    erlexec = "erts-17.0.3/bin/erlexec",
-    elixir_version = "1.20.2",
-    elixir_url = "https://artifacts.example/elixir-1.20.2-otp-29.tar.gz",
-    elixir_sha256 = "...",
-    exec_compatible_with = [
-        "@platforms//cpu:x86_64",
-        "@platforms//os:linux",
-    ],
-    runtime_abi = "//platforms:otp29_elixir120_glibc239",
-)
-register_toolchains(
-    "@elixir_config//linux_x86_64:otp_toolchain",
-    "@elixir_config//linux_x86_64:toolchain",
-)
-```
+The [rule catalog](docs/rules.md) distinguishes implemented APIs from producer
+or platform responsibilities.
 
-`runtime_abi` is a caller-defined constraint value shared by the toolchain and
-its execution platform. It identifies the complete native ABI/runtime-image
-contract (libc, loader, NIF ABI, and any dynamically linked system closure),
-so an archive cannot resolve on an incompatible worker merely because OS and
-CPU match. Pin the execution platform's container image by digest as well.
+## A minimal application
 
-Both archives are repository inputs. Nothing is extracted into `/tmp`, and no
-runtime installation action runs during the build. See [source toolchains](docs/source_toolchains.md)
-and [prebuilt toolchains](docs/prebuilt_toolchains.md).
-
-## Mix dependencies
-
-Use the checked-in `mix.lock` as the dependency graph and checksum source:
-
-```starlark
-packages = use_extension(
-    "@rules_elixir_mix//bzlmod:packages.bzl",
-    "elixir_packages",
-)
-packages.mix_lock(
-    name = "mix_deps",
-    lockfile = "//:mix.lock",
-    repositories = {
-        "hexpm": "https://repo.hex.pm",
-    },
-)
-use_repo(packages, "hex_pm", "mix_deps")
-```
-
-The pure-Starlark lock parser creates one immutable repository per Hex package
-and a single `@mix_deps` alias hub. Mix actions run with `HEX_OFFLINE=true` and
-network access blocked.
-
-For native Hex dependencies, prefer a checksum-pinned producer archive through
-`precompiled_native_artifacts`. If source compilation is required, name only
-those packages in `native_build_packages`; their actions resolve the standard
-Bazel C/C++ toolchain and the Bash/Make/Perl/POSIX targets declared on the
-selected Elixir toolchain. A platform producer such as `rules_fips` owns that
-musl/glibc closure. These rules consume it without rebuilding it or adding it
-to pure-BEAM action inputs. See [Mix details](docs/mix.md).
-
-## Elixir application
+After registering a toolchain and importing `mix.lock`, one production target
+and one test target look like this:
 
 ```starlark
 load(
     "@rules_elixir_mix//:defs.bzl",
-    "elixir_generated_source",
-    "mix_format_test",
     "mix_library",
-    "mix_phx_assets",
     "mix_test",
 )
 
@@ -178,9 +83,7 @@ mix_library(
     config = glob(["config/**/*.exs"]),
     data = glob(["lib/**/*.eex", "lib/**/*.heex"]),
     priv = glob(["priv/**/*"]),
-    deps = [
-        "@mix_deps//:jason",
-    ],
+    runtime_deps = ["@mix_deps//:jason"],
 )
 
 mix_library(
@@ -190,9 +93,7 @@ mix_library(
     mix_env = "test",
     srcs = glob(["lib/**/*.ex", "test/support/**/*.ex"]),
     config = glob(["config/**/*.exs"]),
-    data = glob(["lib/**/*.eex", "lib/**/*.heex"]),
-    priv = glob(["priv/**/*"]),
-    deps = ["@mix_deps//:jason"],
+    runtime_deps = ["@mix_deps//:jason"],
 )
 
 mix_test(
@@ -200,177 +101,73 @@ mix_test(
     lib = ":app_test",
     srcs = glob(["test/**/*.exs"]),
 )
-mix_format_test(
-    name = "format",
-    lib = ":app_test",
-    srcs = glob(["**/*.ex", "**/*.exs"]),
-)
 ```
 
-Elixir 1.20's gradual set-theoretic type inference runs in the normal compiler,
-so `mix_library` is the type-checking boundary. Warnings fail first-party
-compilation by default.
+The complete quickstart covers the module pin, runtime ABI constraint,
+execution platform, prebuilt toolchain, lock import, and verification:
+[Getting started](docs/getting_started.md).
 
-## Direct Erlang applications
+## Choose a runtime path
 
-`erlang_app` compiles one OTP application without Mix or Rebar while retaining
-the same toolchain, dependency, deterministic-BEAM, `priv`, include, and
-runfiles model:
+| Choose | When |
+| --- | --- |
+| [Prebuilt toolchain](docs/prebuilt_toolchains.md) | Fast CI and remote execution with verified, relocatable OTP/Elixir archives |
+| [Source toolchain](docs/source_toolchains.md) | OTP configuration, C/C++ toolchain, or crypto SDK must define the runtime artifact |
 
-```starlark
-load(
-    "@rules_elixir_mix//:defs.bzl",
-    "erlang_app",
-    "erlang_common_test",
-    "erlang_eunit_test",
-)
+Both paths are checksum-pinned, platform-constrained, and have no host-runtime
+fallback. The runtime ABI constraint must describe the real libc, loader, NIF,
+and native-library closure of the execution environment.
 
-erlang_app(
-    name = "worker",
-    app_name = "worker",
-    version = "1.0.0",
-    srcs = glob([
-        "src/*.erl",
-        "src/*.xrl",
-        "src/*.yrl",
-    ]) + ["src/worker.app.src"],
-    hdrs = glob(["include/*.hrl"]),
-    defines = {"FEATURE_FLAG": "true"},
-    erlc_opts = ["warn_export_all"],
-    compile_deps = [":parse_transform"],
-    type_deps = [":public_types"],
-    runtime_deps = [":runtime_support"],
-)
+## Hermetic by contract
 
-erlang_eunit_test(
-    name = "unit",
-    apps = [":worker"],
-)
+Ordinary build and test actions:
 
-erlang_common_test(
-    name = "common",
-    apps = [":worker"],
-    suites = ["worker_SUITE"],
-    groups = ["integration"],
-    config = ["test/common_test.config"],
-    suite_data = {
-        "test/worker_SUITE_data/payload.json": "worker_SUITE/payload.json",
-    },
-)
-```
+- invoke declared Elixir/Erlang executables directly;
+- run Hex offline and block network access;
+- do not run `mix deps.get`;
+- do not search the host `PATH` for a BEAM runtime or system OpenSSL;
+- avoid generated shell launchers and `run_shell`;
+- carry tools, runfiles, and transitive application data through providers.
 
-Compiler options are Erlang terms, parsed without a shell. The rule owns
-deterministic/debug-info/output options so callers cannot accidentally disable
-reproducibility or Dialyzer input. Common Test supports explicit suites,
-groups, cases, hooks, repeat count, verbosity, config files, and suite data;
-Bazel supplies isolation, runfiles, caching, and test logs.
+OTP's upstream source build still requires declared Bash, Make, Perl, POSIX,
+and C/C++ tools. An Erlang action driver invokes those tools directly; the
+ruleset does not maintain a shell build wrapper.
 
-## Phoenix and LiveView
+Writable workflows—generators, code reload, IEx, `phx.server`, and ElixirLS—are
+explicit local `bazel run` paths over the real checkout. They are not presented
+as cacheable hermetic actions.
 
-Phoenix and LiveView use the same `mix_library` rule. Include `.heex`/`.eex`
-templates in `data`, `test/support` in the test library's `srcs`, configuration
-files in `config`, and generated/static assets under `priv`. Declare the direct
-Mix dependencies through the lock hub, for example:
+## Phoenix, native code, and FIPS
 
-```starlark
-deps = [
-    "@mix_deps//:bandit",
-    "@mix_deps//:jason",
-    "@mix_deps//:phoenix",
-    "@mix_deps//:phoenix_html",
-    "@mix_deps//:phoenix_live_view",
-]
-```
+Phoenix and LiveView compile through the normal application graph. JavaScript
+and CSS compilation belongs to the corresponding Bazel ecosystem rules;
+`mix_phx_assets` handles cacheable `phx.digest` output.
 
-JavaScript and CSS compilation belongs to the relevant Bazel JS rules; pass
-their declared outputs to `mix_phx_assets` for cacheable `phx.digest` output,
-then map that provider into `priv/static` through `priv_entries` before
-`mix_release` assembles the OTP release:
+Native and crypto artifacts come from declared producers. This repository can
+consume a normalized crypto SDK while building pristine OTP, propagate
+FIPS-required runtime activation, and test the shared OTP behavior. It does not
+fetch, patch, certify, or silently choose BoringCrypto, BoringSSL, OpenSSL, or
+another backend. See the
+[backend-neutral crypto SDK contract](docs/source_toolchains.md#backend-neutral-crypto-sdk).
 
-```starlark
-elixir_generated_source(
-    name = "compiled_js_project_input",
-    src = ":compiled_js",
-    destination = "priv/static/assets/app.js",
-)
+## Documentation
 
-elixir_generated_source(
-    name = "compiled_css_project_input",
-    src = ":compiled_css",
-    destination = "priv/static/assets/app.css",
-)
+| Guide | Use it for |
+| --- | --- |
+| [Documentation map](docs/README.md) | Find the shortest path for a task |
+| [Core concepts](docs/concepts.md) | Understand application granularity, dependencies, toolchains, and hermeticity |
+| [Mix and dependencies](docs/mix.md) | Model Hex/Rebar packages, tests, analysis, Phoenix, NIFs, and local workflows |
+| [Releases](docs/releases.md) | Assemble and boot-test immutable releases |
+| [AI agent playbook](docs/agents/README.md) | Give a coding agent a non-guessing integration procedure |
 
-mix_phx_assets(
-    name = "digested_assets",
-    lib = ":app",
-    generated_srcs = [
-        ":compiled_css_project_input",
-        ":compiled_js_project_input",
-    ],
-)
+## Project
 
-mix_library(
-    name = "release_app",
-    app_name = "my_app",
-    mix_config = "mix.exs",
-    srcs = glob(["lib/**/*.ex"]),
-    priv_entries = [":digested_assets"],
-)
-```
+- [Contributing](CONTRIBUTING.md)
+- [Support](SUPPORT.md)
+- [Security](SECURITY.md)
+- [Code of conduct](CODE_OF_CONDUCT.md)
+- [Attribution](docs/attribution.md)
 
-## Analysis and browser tests
-
-The public API includes cached Bazel test targets for:
-
-- `mix_ex_unit_test` / `mix_test`
-- `mix_coverage_test`
-- `mix_format_test`
-- `mix_credo_test`
-- `mix_dialyzer_test`
-- `mix_sobelow_test` for Phoenix security analysis
-- `mix_xref_test` with an explicit current Xref mode
-- `mix_wallaby_test`
-
-Wallaby's Chrome and ChromeDriver binaries are target-platform runtime tools:
-
-```starlark
-mix_wallaby_test(
-    name = "features",
-    lib = ":app_test",
-    chrome = "@chrome_for_testing//:chrome",
-    chromedriver = "@chrome_for_testing//:chromedriver",
-    srcs = glob(["test/features/**/*_test.exs"]),
-)
-```
-
-Configure `Wallaby.Chrome` in `config/test.exs` from `WALLABY_CHROME` and
-`WALLABY_CHROMEDRIVER`. Wallaby may use localhost; the Bazel `block-network`
-tag denies external networking without preventing loopback browser traffic.
-
-See [Mix details](docs/mix.md) and [releases](docs/releases.md).
-
-## FIPS crypto profiles
-
-`source_toolchain(fips = "required", static_crypto_nif = True)` builds pristine
-OTP 29+ with its upstream static-crypto/FIPS flags. Every subsequent Erlang
-invocation receives `-crypto fips_mode true` before Elixir, Mix, Hex, Rebar, or
-application dependencies can load crypto. `mix_release` persists the policy in
-`sys.config`, and `elixir_fips_runtime_test` checks the backend-neutral runtime
-and ELF linkage contract.
-
-`otp_crypto_sdk` normalizes two runtime shapes without coupling this module to
-`rules_fips`:
-
-- a fully static SDK has no runtime files, environment, or activation tool;
-- a provider-backed SDK declares its packaged payload, environment templates,
-  direct activation executable/arguments, and opaque producer metadata.
-
-The provider-backed form is an OpenSSL-3-shaped, backend-neutral contract: each
-build/test action generates its own activation state, while a release invokes
-its packaged activation tool from `runtime.exs` immediately before applications
-start. A producer-backed OpenSSL matrix is required before claiming a specific
-OpenSSL/FIPS combination is verified. Ambient OpenSSL paths are cleared, so
-neither path can silently use the host installation.
-BoringCrypto certification data, OpenSSL provider identity, source digests,
-and backend-specific service indicators remain entirely with the SDK producer.
-See [source toolchains](docs/source_toolchains.md) for the complete contract.
+The project is licensed under [Apache License 2.0](LICENSE). `NOTICE` and the
+attribution guide identify source inherited from earlier rulesets where
+applicable.

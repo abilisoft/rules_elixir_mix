@@ -1,0 +1,70 @@
+# SPDX-FileCopyrightText: 2026 AbiliSoft
+# SPDX-License-Identifier: Apache-2.0
+
+name: Feature request
+description: Propose a rule, provider, workflow, or ownership-contract improvement.
+title: "feature: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the Bazel ownership boundary and incremental-build value, not only the Mix command to invoke.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues, public rules, and documentation.
+          required: true
+        - label: The proposal does not require an ambient host runtime, tool, crypto library, or network fetch.
+          required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What user outcome is unavailable or unnecessarily expensive today?
+    validations:
+      required: true
+  - type: textarea
+    id: api
+    attributes:
+      label: Proposed Bazel API
+      description: Sketch targets, attributes, providers, toolchains, and dependency edges.
+      render: starlark
+    validations:
+      required: true
+  - type: textarea
+    id: ownership
+    attributes:
+      label: Hermeticity and ownership
+      description: Identify every tool/input/runtime file, network requirement, writable path, native ABI, and producer/consumer boundary.
+    validations:
+      required: true
+  - type: textarea
+    id: caching
+    attributes:
+      label: Incrementality and caching
+      description: State the proposed action granularity, cache keys, outputs, and remote-execution behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: compatibility
+    attributes:
+      label: Compatibility
+      description: Explain effects on existing rules, providers, Mix projects, toolchains, releases, and supported platforms.
+    validations:
+      required: true
+  - type: textarea
+    id: validation
+    attributes:
+      label: Validation plan
+      description: List analysis, integration, reproducibility, runtime, and failure-path tests.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Include existing Bazel rules or native Mix workflows and why they do not solve the problem.
