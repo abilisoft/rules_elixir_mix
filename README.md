@@ -14,14 +14,15 @@ Hermetic, Mix-first Bazel rules for Elixir and Erlang/OTP applications,
 including Phoenix, LiveView, ExUnit, analysis, and releases.
 
 > [!IMPORTANT]
-> The `0.1.0` BCR release is prepared but is not available until its signed tag
-> and registry entry are published. Until then, pin a verified commit. Source
-> builds can use the immutable,
-> latest-tested source catalog shipped with that commit; prebuilt runtimes must
-> still come from checksum-pinned producer archives. CI proves Bazel 9.2.0 and
-> the [catalog-default source tuple](bzlmod/versions.bzl) on Linux x86-64 and
-> Linux ARM64; it does not imply support for an untested platform or runtime
-> ABI.
+> [`v0.1.0`](https://github.com/abilisoft/rules_elixir_mix/releases/tag/v0.1.0)
+> is available as a signed GitHub release but is intentionally not published to
+> the Bazel Central Registry yet. Pin its verified commit directly as shown in
+> [Getting started](docs/getting_started.md#1-pin-the-ruleset). Source builds
+> can use the immutable, latest-tested source catalog shipped with that commit;
+> prebuilt runtimes must still come from checksum-pinned producer archives. CI
+> proves Bazel 9.2.0 and the
+> [catalog-default source tuple](bzlmod/versions.bzl) on Linux x86-64 and Linux
+> ARM64; it does not imply support for an untested platform or runtime ABI.
 
 [Get started](docs/getting_started.md) ·
 [Browse the docs](docs/README.md) ·

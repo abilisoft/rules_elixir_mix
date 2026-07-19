@@ -18,6 +18,20 @@ A BCR module release does not need Chrome, Postgres, OTP binaries, Elixir
 binaries, or a crypto SDK. Runtime archives do need a fully declared source
 toolchain and platform closure.
 
+## Current publication state
+
+- [`v0.1.0`](https://github.com/abilisoft/rules_elixir_mix/releases/tag/v0.1.0)
+  is a signed GitHub release whose verified target commit is
+  `ea6194a031302ee7a1a40539cd78f3f280d3bfd3`.
+- The module is not published to BCR. Consumers should use the direct commit
+  override in [Getting started](getting_started.md#1-pin-the-ruleset).
+- No official OTP or Elixir runtime archives are published. The rules accept
+  producer-owned, checksum-pinned archives, while the real crypto-backed
+  producer matrix remains pending.
+
+These are independent gates. Deferring BCR publication or official runtime
+archives does not prevent testing the signed ruleset through an exact commit.
+
 ## Bazel Central Registry release
 
 The checked-in BCR templates publish the signed GitHub tag archive and run the

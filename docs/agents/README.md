@@ -63,9 +63,10 @@ Record these facts before proposing targets:
 
 ### 1. Pin the ruleset
 
-Use a released module version when one exists. Until this repository publishes
-its first stable release, use a full, verified commit SHA as shown in
-[Getting started](../getting_started.md#1-pin-the-ruleset). Never track a branch.
+Use a BCR module version when one exists. Until then, pin the full verified
+commit referenced by the signed GitHub release, as shown in
+[Getting started](../getting_started.md#1-pin-the-ruleset). Never track a branch
+or tag.
 
 ### 2. Define the execution platform
 
