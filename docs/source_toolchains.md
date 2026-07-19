@@ -84,9 +84,9 @@ crypto-sdk/
     └── libcrypto.a
 ```
 
-This means “fully static, no deployment payload.” It suits a
-BoringCrypto-shaped SDK and clears ambient OpenSSL provider variables before a
-FIPS-required BEAM starts. A provider-based OpenSSL SDK must use
+This means “fully static, no deployment payload.” It suits any compatible
+fully static SDK and clears ambient provider configuration before a
+FIPS-required BEAM starts. An SDK with a runtime provider payload must use
 `otp_crypto_sdk`; otherwise OTP's build-time FIPS verification fails instead of
 borrowing host configuration.
 

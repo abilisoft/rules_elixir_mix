@@ -117,7 +117,7 @@ flowchart LR
 
 rules_elixir_mix stays backend-neutral. It consumes a normalized SDK, builds or
 verifies OTP, propagates early FIPS activation, packages declared runtime state,
-and tests shared behavior. It does not fetch BoringCrypto/OpenSSL, claim a
+and tests shared behavior. It does not fetch crypto implementations, claim a
 certificate, interpret backend metadata, or silently substitute a provider.
 
 The same boundary applies to Rustler and other NIFs: the appropriate Bazel
