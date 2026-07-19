@@ -36,6 +36,8 @@ GitHub Actions runs validation, integration, and pristine source-toolchain
 checks. Bazel streams those invocations to BuildBuddy and uses its remote cache
 and execution service. The workflow reads authentication from the
 `BUILDBUDDY_ORG_API_KEY` GitHub secret; no API key is stored in source control.
+Fork pull requests do not receive that secret, so their required checks
+explicitly disable the remote services and execute with Bazel's local sandbox.
 
 The integration and source-build execution platforms use digest-pinned
 HexPM/Elixir and Erlang images. Workflow bootstrap archives are produced from
