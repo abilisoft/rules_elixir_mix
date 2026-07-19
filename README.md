@@ -1,5 +1,8 @@
 # rules_elixir_mix
 
+[![CI](https://github.com/abilisoft/rules_elixir_mix/actions/workflows/test.yaml/badge.svg)](https://github.com/abilisoft/rules_elixir_mix/actions/workflows/test.yaml)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](./LICENSE)
+
 Hermetic, Mix-first Bazel rules for Elixir, Phoenix, LiveView, and ExUnit.
 
 This ruleset is Bzlmod-only and targets Bazel 9.2.0 or newer. The checked-in
