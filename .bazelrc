@@ -1,3 +1,11 @@
 build --incompatible_strict_action_env
 
+# GitHub Actions supplies BuildBuddy authentication from its encrypted secret.
+# Local authentication belongs in ~/.bazelrc or the ignored user.bazelrc.
+build --bes_results_url=https://abilisoft.buildbuddy.io/invocation/
+build --bes_backend=grpcs://abilisoft.buildbuddy.io
+common --remote_cache=grpcs://abilisoft.buildbuddy.io
+common --remote_timeout=10m
+common --remote_executor=grpcs://abilisoft.buildbuddy.io
+
 try-import %workspace%/user.bazelrc

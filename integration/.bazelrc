@@ -1,1 +1,3 @@
+import %workspace%/../.bazelrc
+
 build --platforms=//:ci_execution_platform
