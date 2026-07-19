@@ -29,6 +29,10 @@ jobs:
         with:
           script: |
             const tagName = process.env.TAG_NAME;
+            if (!/^v\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(tagName)) {
+              core.setFailed(`invalid release tag: ${tagName}`);
+              return;
+            }
             const ref = await github.rest.git.getRef({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -45,6 +49,36 @@ jobs:
             });
             if (!tag.data.verification?.verified) {
               core.setFailed(`${tagName} is not cryptographically verified`);
+              return;
+            }
+            if (tag.data.object.type !== "commit") {
+              core.setFailed(`${tagName} does not point directly to a commit`);
+              return;
+            }
+            const comparison = await github.rest.repos.compareCommitsWithBasehead({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              basehead: `${tag.data.object.sha}...main`,
+            });
+            if (!["ahead", "identical"].includes(comparison.data.status)) {
+              core.setFailed(`${tagName} does not identify a commit on main`);
+              return;
+            }
+            const moduleResponse = await github.rest.repos.getContent({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              path: "MODULE.bazel",
+              ref: tag.data.object.sha,
+            });
+            if (Array.isArray(moduleResponse.data) || moduleResponse.data.type !== "file") {
+              core.setFailed(`MODULE.bazel is not a file at ${tagName}`);
+              return;
+            }
+            const moduleFile = Buffer.from(moduleResponse.data.content, "base64").toString("utf8");
+            const version = moduleFile.match(/\bversion\s*=\s*"([^"]+)"/);
+            const expected = tagName.slice(1);
+            if (!version || version[1] !== expected) {
+              core.setFailed(`MODULE.bazel version ${version?.[1] || "missing"} does not match ${expected}`);
               return;
             }
             const release = await github.rest.repos.getReleaseByTag({
