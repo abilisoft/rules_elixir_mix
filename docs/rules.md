@@ -65,6 +65,7 @@ Load public APIs from `@rules_elixir_mix//:defs.bzl`. Module extensions live in
 | `otp_toolchain`, `elixir_toolchain` | Low-level rule | Assemble custom toolchain registrations |
 | `otp_prebuilt_release`, `elixir_prebuilt_release` | Low-level rule | Validate/expose extracted runtime trees |
 | `otp_source_release`, `elixir_source_release` | Low-level rule | Build source runtime trees |
+| `beam_runtime_archive` | Producer rule | Package a crypto-enabled source runtime with deterministic metadata and SHA-256 |
 | `otp_crypto_sdk` | Rule/provider | Normalize static or provider-backed crypto SDK payloads |
 | `elixir_fips_runtime_test` | Test | Verify shared fail-closed OTP FIPS/static-link behavior |
 
@@ -83,6 +84,7 @@ rules exist for producers and advanced repository integration.
 | `ElixirSourceInfo` | Generated input with a stable logical destination |
 | `ElixirProtocolInfo` | Protocol consolidation inputs/output |
 | `DialyzerPltInfo` | Cacheable PLT artifact and application closure |
+| `BeamRuntimeArchiveInfo` | Runtime archive, SHA-256, release metadata, version, and strip prefix |
 
 Do not pass raw filesystem paths between rules when one of these providers
 expresses the contract. Providers make runfiles, cache keys, and transitive

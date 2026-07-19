@@ -28,6 +28,8 @@ load("//private:otp_source_release.bzl", _otp_source_release = "otp_source_relea
 load("//private:otp_toolchain.bzl", _otp_toolchain = "otp_toolchain")
 load("//private:rebar_library.bzl", _rebar_library = "rebar_library")
 load("//private:release_runtime_test.bzl", _elixir_release_test = "elixir_release_test")
+load("//private:runtime_archive.bzl", _beam_runtime_archive = "beam_runtime_archive")
+load("//private:runtime_archive_info.bzl", _BeamRuntimeArchiveInfo = "BeamRuntimeArchiveInfo")
 
 ErlangAppInfo = _ErlangAppInfo
 OtpInfo = _OtpInfo
@@ -37,6 +39,8 @@ ElixirPrivInfo = _ElixirPrivInfo
 ElixirSourceInfo = _ElixirSourceInfo
 ElixirProtocolInfo = _ElixirProtocolInfo
 DialyzerPltInfo = _DialyzerPltInfo
+BeamRuntimeArchiveInfo = _BeamRuntimeArchiveInfo
+beam_runtime_archive = _beam_runtime_archive
 otp_prebuilt_release = _otp_prebuilt_release
 otp_crypto_sdk = _otp_crypto_sdk
 otp_source_release = _otp_source_release

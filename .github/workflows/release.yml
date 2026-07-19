@@ -1,0 +1,103 @@
+# SPDX-FileCopyrightText: 2026 AbiliSoft
+# SPDX-License-Identifier: Apache-2.0
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: "Existing signed version tag to release"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  verify-tag:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      commit_sha: ${{ steps.tag.outputs.commit_sha }}
+      tag_name: ${{ steps.tag.outputs.tag_name }}
+    steps:
+      - name: Require a signed annotated tag on main
+        id: tag
+        uses: actions/github-script@d746ffe35508b1917358783b479e04febd2b8f71 # v9.0.0
+        env:
+          TAG_NAME: ${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.ref_name }}
+        with:
+          script: |
+            const tagName = process.env.TAG_NAME;
+            if (!/^v\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(tagName)) {
+              core.setFailed(`invalid release tag: ${tagName}`);
+              return;
+            }
+            const ref = await github.rest.git.getRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: `tags/${tagName}`,
+            });
+            if (ref.data.object.type !== "tag") {
+              core.setFailed(`${tagName} is lightweight; releases require a signed annotated tag`);
+              return;
+            }
+            const tag = await github.rest.git.getTag({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag_sha: ref.data.object.sha,
+            });
+            if (!tag.data.verification?.verified) {
+              core.setFailed(`${tagName} is not verified: ${tag.data.verification?.reason || "unknown reason"}`);
+              return;
+            }
+            if (tag.data.object.type !== "commit") {
+              core.setFailed(`${tagName} does not point directly to a commit`);
+              return;
+            }
+            const comparison = await github.rest.repos.compareCommitsWithBasehead({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              basehead: `${tag.data.object.sha}...main`,
+            });
+            if (!["ahead", "identical"].includes(comparison.data.status)) {
+              core.setFailed(`${tagName} does not identify a commit on main`);
+              return;
+            }
+            core.setOutput("commit_sha", tag.data.object.sha);
+            core.setOutput("tag_name", tagName);
+
+  release:
+    needs: verify-tag
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+          ref: ${{ needs.verify-tag.outputs.commit_sha }}
+      - name: Require the tag and module versions to match
+        uses: actions/github-script@d746ffe35508b1917358783b479e04febd2b8f71 # v9.0.0
+        env:
+          TAG_NAME: ${{ needs.verify-tag.outputs.tag_name }}
+        with:
+          script: |
+            const fs = require("fs");
+            const moduleFile = fs.readFileSync("MODULE.bazel", "utf8");
+            const match = moduleFile.match(/\bversion\s*=\s*"([^"]+)"/);
+            const expected = process.env.TAG_NAME.slice(1);
+            if (!match || match[1] !== expected) {
+              core.setFailed(`MODULE.bazel version ${match?.[1] || "missing"} does not match ${expected}`);
+            }
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@fe965f7af51af5f2602596916f38a38df2e33de0 # v3.0.2
+        with:
+          generate_release_notes: true
+          make_latest: true
+          tag_name: ${{ needs.verify-tag.outputs.tag_name }}

@@ -2,6 +2,7 @@
 
 load("//private:beam_info.bzl", "OtpInfo", "crypto_exec_inputs", "crypto_exec_tools", "erl_env_flags", "fips_erl_args", "otp_runtime_env")
 load("//private:elixir_info.bzl", "ElixirInfo", "otp_info_from_dependency")
+load("//private:runtime_archive_info.bzl", "BeamRuntimeSourceInfo")
 
 _DRIVER_EVAL = "A=init:get_plain_arguments(),[N,S|R]=A,{ok,artifact_normalizer,NB}=compile:file(N,[binary,report_errors,report_warnings]),{module,artifact_normalizer}=code:load_binary(artifact_normalizer,N,NB),C=compile:file(S,[binary,report_errors,report_warnings]),M=element(2,C),B=element(3,C),{module,M}=code:load_binary(M,S,B),M:main(R),halt()."
 
@@ -160,6 +161,12 @@ def _elixir_source_release_impl(ctx):
     return [
         DefaultInfo(files = runtime_files),
         otp,
+        BeamRuntimeSourceInfo(
+            kind = "elixir",
+            root = output,
+            root_relative_path = "",
+            version = ctx.attr.version,
+        ),
         ElixirInfo(
             version = ctx.attr.version,
             elixir_home = output.path,

@@ -1,13 +1,15 @@
-matrix:
-  bazel:
-    - 9.x
+# SPDX-FileCopyrightText: 2026 AbiliSoft
+# SPDX-License-Identifier: Apache-2.0
 
-tasks:
-  verify_targets:
-    name: Verify Starlark
-    platform: ubuntu2204
-    bazel: ${{ bazel }}
-    build_flags:
-      - --incompatible_strict_action_env
-    test_targets:
-      - "@rules_elixir_mix//:buildifier_test"
+bcr_test_module:
+  module_path: "e2e/bcr"
+  matrix:
+    platform: ["debian13", "debian13_arm64"]
+    bazel: ["9.x"]
+  tasks:
+    consumer_smoke:
+      name: "Resolve public OTP and Elixir toolchains"
+      platform: ${{ platform }}
+      bazel: ${{ bazel }}
+      build_targets:
+        - "//:smoke"

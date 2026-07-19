@@ -24,13 +24,24 @@ load(
 load("@rules_elixir_mix//test:analysis_tests.bzl", "fingerprint_equality_test")
 load(":generated_asset.bzl", "generated_asset")
 
+filegroup(
+    name = "lazy_html_nif",
+    srcs = select({
+        "@platforms//cpu:arm64": ["@lazy_html_nif_arm64_linux_gnu//file"],
+        "@platforms//cpu:x86_64": ["@lazy_html_nif_x86_64_linux_gnu//file"],
+    }),
+    visibility = ["//visibility:public"],
+)
+
 erlang_app(
     name = "direct_erlang_app",
     srcs = [
         "erlang/direct_fixture.erl",
         "erlang/direct_fixture_SUITE.erl",
         "@rules_elixir_mix//private:artifact_normalizer.erl",
+        "@rules_elixir_mix//private:runtime_archive_driver.erl",
         "@rules_elixir_mix//test:src/artifact_normalizer_tests.erl",
+        "@rules_elixir_mix//test:src/runtime_archive_driver_tests.erl",
     ],
     app_name = "direct_erlang_app",
     version = "0.1.0",
@@ -97,20 +108,40 @@ constraint_setting(
 )
 
 constraint_value(
-    name = "hexpm_elixir_otp29_elixir120",
+    name = "elixir_otp29_elixir120_x86_64",
     constraint_setting = ":execution_image",
     visibility = ["//visibility:public"],
 )
 
 platform(
-    name = "ci_execution_platform",
+    name = "ci_execution_platform_x86_64",
     constraint_values = [
-        ":hexpm_elixir_otp29_elixir120",
+        ":elixir_otp29_elixir120_x86_64",
+        "@elixir_config//:runtime_otp29_elixir120_x86_64",
         "@platforms//cpu:x86_64",
         "@platforms//os:linux",
     ],
     exec_properties = {
-        "container-image": "docker://hexpm/elixir@sha256:50b4199b1b892d140add53647af4c8e593c441ee8320f168f5eb66a5032d7379",
+        "container-image": "docker://elixir@sha256:d430c98a3ba7c97bdfe688e29e8c4378966519c79af04963cc9276f7f2013ecc",
+    },
+)
+
+constraint_value(
+    name = "elixir_otp29_elixir120_arm64",
+    constraint_setting = ":execution_image",
+    visibility = ["//visibility:public"],
+)
+
+platform(
+    name = "ci_execution_platform_arm64",
+    constraint_values = [
+        ":elixir_otp29_elixir120_arm64",
+        "@elixir_config//:runtime_otp29_elixir120_arm64",
+        "@platforms//cpu:arm64",
+        "@platforms//os:linux",
+    ],
+    exec_properties = {
+        "container-image": "docker://elixir@sha256:d430c98a3ba7c97bdfe688e29e8c4378966519c79af04963cc9276f7f2013ecc",
     },
 )
 
