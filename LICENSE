@@ -1,14 +1,9 @@
-This package, bazel-erlang, is dual-licensed under
-the Apache License Version 2.0 and the Mozilla Public License Version 2.0.
+rules_elixir_mix is licensed under the Apache License, Version 2.0.
 
-For the Apache License, please see the file
+For the complete license terms, see
 [LICENSE-APACHE2](./LICENSE-APACHE2).
 
-For the Mozilla Public License, please see the file
-[LICENSE-MPL-RabbitMQ](./LICENSE-MPL-RabbitMQ).
-
-For attribution of copyright and other details of provenance, please
-refer to the source code.
-
-If you have any questions regarding licensing, please contact us at
-info@rabbitmq.com.
+This repository contains portions adapted from upstream projects that offered
+those portions under either Apache-2.0 or MPL-2.0. This project exercises the
+Apache-2.0 option. See [NOTICE](./NOTICE) and
+[docs/attribution.md](./docs/attribution.md) for provenance and attribution.

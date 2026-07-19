@@ -17,10 +17,10 @@ This repository is derived from and adapts work from:
   Provider, Rebar, and Erlang/OTP source-build patterns were inspected and
   selectively adapted. It is not a Bazel or runtime dependency.
 
-The inherited rules_elixir code and license files are preserved under the
-upstream dual-license terms documented in LICENSE, LICENSE-APACHE2, and
-LICENSE-MPL-RabbitMQ.
+The inherited rules_elixir code was offered upstream under either Apache-2.0
+or MPL-2.0. This project exercises the Apache-2.0 option and distributes those
+adapted portions under the terms in LICENSE and LICENSE-APACHE2.
 
-New modifications in this repository are licensed under Apache License 2.0
-unless a file states otherwise. Files copied or adapted from upstream retain
-their inherited notices and license obligations.
+New modifications in this repository are also licensed under Apache-2.0 unless
+a file states otherwise. Upstream provenance and attribution are retained here
+and in docs/attribution.md.
