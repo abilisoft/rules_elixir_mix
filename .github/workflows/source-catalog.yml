@@ -1,0 +1,81 @@
+# SPDX-FileCopyrightText: 2026 AbiliSoft
+# SPDX-License-Identifier: Apache-2.0
+
+name: Source catalog
+
+on:
+  schedule:
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: source-catalog
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      actions: write
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1.24.1
+        with:
+          otp-version: "29.0.3"
+          elixir-version: "1.20.2"
+      - name: Check catalog-updater formatting
+        run: mix format --check-formatted tools/source_catalog.ex tools/source_catalog_test.exs tools/update_source_catalog.exs
+      - name: Test the catalog updater
+        run: elixir tools/source_catalog_test.exs
+      - name: Refresh stable source releases
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: elixir tools/update_source_catalog.exs
+      - name: Open or update the catalog pull request
+        id: catalog_pr
+        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
+        with:
+          add-paths: bzlmod/versions.bzl
+          branch: automation/source-catalog
+          commit-message: "deps: update BEAM source catalog"
+          delete-branch: true
+          sign-commits: true
+          title: "deps: update BEAM source catalog"
+          body: |
+            Update the immutable OTP and Elixir source catalog from their
+            official latest stable GitHub releases.
+
+            The downloaded archives are hashed but never executed by this
+            workflow. Every protected-branch check, including the full Bazel
+            matrix, must pass before this change is eligible to merge.
+      - name: Require verified bot commits
+        if: steps.catalog_pr.outputs.pull-request-operation == 'created' || steps.catalog_pr.outputs.pull-request-operation == 'updated'
+        run: test "${{ steps.catalog_pr.outputs.pull-request-commits-verified }}" = "true"
+      - name: Dispatch Bazel validation
+        if: steps.catalog_pr.outputs.pull-request-operation == 'created' || steps.catalog_pr.outputs.pull-request-operation == 'updated'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run test.yaml --ref automation/source-catalog
+      - name: Dispatch CodeQL
+        if: steps.catalog_pr.outputs.pull-request-operation == 'created' || steps.catalog_pr.outputs.pull-request-operation == 'updated'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run codeql.yml --ref automation/source-catalog
+      - name: Dispatch dependency review
+        if: steps.catalog_pr.outputs.pull-request-operation == 'created' || steps.catalog_pr.outputs.pull-request-operation == 'updated'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run dependency-review.yml --ref automation/source-catalog --field base_ref=main --field head_ref=automation/source-catalog
+      - name: Dispatch Trivy
+        if: steps.catalog_pr.outputs.pull-request-operation == 'created' || steps.catalog_pr.outputs.pull-request-operation == 'updated'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run trivy.yml --ref automation/source-catalog

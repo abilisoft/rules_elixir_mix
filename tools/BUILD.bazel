@@ -1,0 +1,8 @@
+# SPDX-FileCopyrightText: 2026 AbiliSoft
+# SPDX-License-Identifier: Apache-2.0
+
+exports_files([
+    "source_catalog.ex",
+    "source_catalog_test.exs",
+    "update_source_catalog.exs",
+])

@@ -2,4 +2,5 @@ exports_files([
     "mix_lock_test_support.bzl",
     "packages.bzl",
     "toolchains.bzl",
+    "versions.bzl",
 ])

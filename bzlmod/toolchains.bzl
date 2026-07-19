@@ -1,6 +1,7 @@
 """Bzlmod extension for OTP+Elixir toolchains."""
 
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+load("//bzlmod:versions.bzl", "DEFAULT_ELIXIR_VERSION", "DEFAULT_OTP_VERSION", "resolve_source_release")
 load(
     "//repositories:elixir_config.bzl",
     "INSTALLATION_TYPE_PREBUILT",
@@ -169,8 +170,24 @@ def _toolchains_impl(module_ctx):
         for tag in mod.tags.source_toolchain:
             _claim_name(mod, tag.name, owners)
             _validate_sha256(tag.bootstrap_otp_sha256, "bootstrap_otp_sha256", tag.name)
-            _validate_sha256(tag.otp_sha256, "otp_sha256", tag.name)
-            _validate_sha256(tag.elixir_sha256, "elixir_sha256", tag.name)
+            otp_source = resolve_source_release(
+                language = "otp",
+                version = tag.otp_version,
+                url = tag.otp_url,
+                sha256 = tag.otp_sha256,
+                strip_prefix = tag.otp_strip_prefix,
+                archive_type = tag.otp_type,
+            )
+            elixir_source = resolve_source_release(
+                language = "elixir",
+                version = tag.elixir_version,
+                url = tag.elixir_url,
+                sha256 = tag.elixir_sha256,
+                strip_prefix = tag.elixir_strip_prefix,
+                archive_type = tag.elixir_type,
+            )
+            _validate_sha256(otp_source.sha256, "otp_sha256", tag.name)
+            _validate_sha256(elixir_source.sha256, "elixir_sha256", tag.name)
             if not tag.posix_tools:
                 fail("source_toolchain '{}' requires a declared hermetic posix_tools bundle".format(tag.name))
             types[tag.name] = INSTALLATION_TYPE_SOURCE
@@ -202,11 +219,11 @@ def _toolchains_impl(module_ctx):
             otp_repository = "rules_elixir_mix_otp_sources_{}".format(tag.name)
             _fetch_source(
                 otp_repository,
-                tag.otp_url,
+                otp_source.url,
                 tag.otp_urls,
-                tag.otp_sha256,
-                tag.otp_strip_prefix,
-                tag.otp_type,
+                otp_source.sha256,
+                otp_source.strip_prefix,
+                otp_source.archive_type,
             )
             otp_source_files[tag.name] = _runtime_label(otp_repository, "runtime")
             otp_source_directory_manifests[tag.name] = _runtime_label(otp_repository, "source_directories.manifest")
@@ -214,11 +231,11 @@ def _toolchains_impl(module_ctx):
             elixir_repository = "rules_elixir_mix_elixir_sources_{}".format(tag.name)
             _fetch_runtime(
                 elixir_repository,
-                tag.elixir_url,
+                elixir_source.url,
                 tag.elixir_urls,
-                tag.elixir_sha256,
-                tag.elixir_strip_prefix,
-                tag.elixir_type,
+                elixir_source.sha256,
+                elixir_source.strip_prefix,
+                elixir_source.archive_type,
                 [],
             )
             elixir_source_files[tag.name] = _runtime_label(elixir_repository, "runtime")
@@ -333,16 +350,16 @@ source_toolchain = tag_class(attrs = {
     "bootstrap_otp_type": attr.string(),
     "bootstrap_erlexec": attr.string(mandatory = True),
     "bootstrap_version_marker": attr.string(),
-    "otp_version": attr.string(mandatory = True),
-    "otp_url": attr.string(mandatory = True),
+    "otp_version": attr.string(default = DEFAULT_OTP_VERSION),
+    "otp_url": attr.string(),
     "otp_urls": attr.string_list(),
-    "otp_sha256": attr.string(mandatory = True),
+    "otp_sha256": attr.string(),
     "otp_strip_prefix": attr.string(),
     "otp_type": attr.string(),
-    "elixir_version": attr.string(mandatory = True),
-    "elixir_url": attr.string(mandatory = True),
+    "elixir_version": attr.string(default = DEFAULT_ELIXIR_VERSION),
+    "elixir_url": attr.string(),
     "elixir_urls": attr.string_list(),
-    "elixir_sha256": attr.string(mandatory = True),
+    "elixir_sha256": attr.string(),
     "elixir_strip_prefix": attr.string(),
     "elixir_type": attr.string(),
     "bash": attr.label(mandatory = True),
