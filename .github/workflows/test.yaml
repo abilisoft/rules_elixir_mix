@@ -69,6 +69,7 @@ jobs:
           //test:static_crypto_sdk
           //test:toolchain_analysis
           //test:typecheck_analysis_fixture
+          //test:version_catalog_analysis
           //test:wallaby_analysis_fixture
       - name: Analyze FIPS and provider runtime surface
         run: >-
@@ -100,6 +101,10 @@ jobs:
           tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner --format=gnu -czf /tmp/rules-elixir-mix-ci-otp-container.tar.gz -C /usr/local/lib/erlang .
           install -m 0644 integration/ELIXIR_VERSION /usr/local/lib/elixir/VERSION
           tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner --format=gnu -czf /tmp/rules-elixir-mix-ci-elixir-with-version.tar.gz -C /usr/local/lib/elixir .
+      - name: Check source-catalog maintenance formatting
+        run: mix format --check-formatted tools/source_catalog.ex tools/source_catalog_test.exs tools/update_source_catalog.exs
+      - name: Test source-catalog maintenance
+        run: elixir tools/source_catalog_test.exs
       - name: Execute Mix, Hex, Rebar, ExUnit, release, and analysis actions
         working-directory: integration
         run: |
@@ -152,10 +157,10 @@ jobs:
           tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner
           --format=gnu -czf /tmp/rules-elixir-mix-ci-otp-erlang-29.0.3.tar.gz
           -C /usr/local/lib/erlang .
-      - name: Build OTP 29.0.3 and Elixir 1.20.2 from pristine sources
+      - name: Build the catalog-default OTP and Elixir tuple from pristine sources
         working-directory: source_integration
         run: >-
           bazel build
           ${BAZEL_REMOTE_FALLBACK}
           --remote_header=x-buildbuddy-api-key="${BUILDBUDDY_ORG_API_KEY}"
-          @elixir_config//otp29_elixir120_source:runtime
+          @elixir_config//catalog_source:runtime

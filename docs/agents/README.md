@@ -202,6 +202,10 @@ OTP build alone.
 Before calling the integration complete, verify all of the following:
 
 - all archives are pinned by checksum and all toolchains are registered;
+- source versions resolve from the pinned ruleset catalog or a complete
+  URL/SHA-256 override, never a moving `latest` lookup;
+- catalog maintenance discovers stable upstream releases outside Bazel, hashes
+  their immutable archives, and submits reviewable signed pull requests;
 - the action does not discover executables through the host `PATH`;
 - build and test actions do not access the network;
 - no action runs `mix deps.get` or mutates `mix.lock`;
@@ -230,6 +234,7 @@ prove compatibility with an undeclared worker image.
   discovery;
 - raw path strings passed between rules where a provider carries the artifact;
 - network access justified as a cache warm-up;
+- live release discovery or an unpinned `latest` toolchain alias;
 - claims of platform, FIPS, backend, release, or cross-compilation support that
   are not backed by the pinned implementation and a relevant test.
 

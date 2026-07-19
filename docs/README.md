@@ -12,8 +12,8 @@ cacheable actions—while Mix remains responsible for Elixir semantics.
 > [!IMPORTANT]
 > This project has not published its first stable release or official runtime
 > archive set. Pin a GitHub-verified commit and bring checksum-pinned OTP and
-> Elixir archives. The CI-proven reference combination is Bazel 9.2.0, OTP
-> 29.0.3, and Elixir 1.20.2 on Linux x86-64.
+> Elixir archives. CI proves Bazel 9.2.0 and the
+> [catalog-default source tuple](../bzlmod/versions.bzl) on Linux x86-64.
 
 ## Choose your path
 
@@ -54,7 +54,7 @@ the other.
 | Capability | Status |
 | --- | --- |
 | Bzlmod, Bazel 9.2+, Linux execution | CI required |
-| OTP 29.0.3 + Elixir 1.20.2 source build | CI required |
+| Catalog-default OTP + Elixir source build | CI required |
 | Checksum-pinned prebuilt OTP/Elixir consumption | Implemented and analyzed |
 | Mix and Rebar dependency import from `mix.lock` | Integration tested |
 | Compile/type/runtime dependency separation | Analysis and Dialyzer tested |

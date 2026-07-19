@@ -1,4 +1,5 @@
 build --incompatible_strict_action_env
+build --sandbox_default_allow_network=false
 
 # GitHub Actions supplies BuildBuddy authentication from its encrypted secret.
 # Local authentication belongs in ~/.bazelrc or the ignored user.bazelrc.

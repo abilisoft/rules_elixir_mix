@@ -32,6 +32,57 @@ The bootstrap OTP does not become part of the registered runtime. It is an
 ordinary action input, just as a bootstrap compiler is for any self-hosting
 language.
 
+## Known source versions
+
+The pinned ruleset carries an immutable catalog of source archive URLs,
+SHA-256 digests, extraction metadata, and one latest-tested default tuple.
+Omitting `otp_version` and `elixir_version` selects that fixed tuple. This is a
+local Starlark lookup: it never discovers a moving release during repository
+evaluation.
+
+```starlark
+beam = use_extension(
+    "@rules_elixir_mix//bzlmod:toolchains.bzl",
+    "elixir_config",
+)
+
+beam.source_toolchain(
+    name = "beam_source",
+    bootstrap_otp_version = "29.0.3",
+    bootstrap_otp_url = "https://artifacts.example/otp-bootstrap.tar.gz",
+    bootstrap_otp_sha256 = "<64-hex-sha256>",
+    bootstrap_erlexec = "erts-17.0.3/bin/erlexec",
+    bash = "@native_platform//:bash",
+    make = "@native_platform//:make",
+    perl = "@native_platform//:perl",
+    posix_tools = ["@native_platform//:tools"],
+    exec_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    runtime_abi = "//platforms:otp29_elixir120_linux_x86_64",
+)
+```
+
+Set `otp_version` or `elixir_version` to another cataloged value when needed.
+For a version absent from the catalog, set that language's `*_url` and
+`*_sha256` together; optional `*_strip_prefix` and `*_type` then describe the
+custom archive. Mirrors belong in `otp_urls` or `elixir_urls`. Partial
+overrides fail during module-extension evaluation.
+
+The catalog deliberately does not cover prebuilt runtimes. Those bytes depend
+on the producer, target platform, libc, loader, NIF ABI, and native closure, so
+`prebuilt_toolchain` continues to require explicit archive URLs and digests.
+Updating the default source tuple requires upgrading the pinned ruleset and is
+therefore an ordinary reviewable dependency change.
+
+The `Source catalog` workflow checks the official stable OTP and Elixir GitHub
+releases every six hours. When either changes, it hashes the immutable tag
+archive without executing it and opens a pull request using a GitHub-verified
+bot commit. The source-toolchain job then builds the proposed default tuple
+from pristine sources. A release becomes a known, tested default only after
+that pull request passes the full matrix and is merged.
+
 The current runtime and static-linkage verifier are Linux-specific. Generated
 toolchains therefore require `@platforms//os:linux` for both execution and
 target platforms instead of advertising an unverified portable runtime.

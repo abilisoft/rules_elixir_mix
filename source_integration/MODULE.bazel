@@ -40,7 +40,7 @@ elixir_config = use_extension(
     "elixir_config",
 )
 elixir_config.source_toolchain(
-    name = "otp29_elixir120_source",
+    name = "catalog_source",
     bash = "@source_tools//:bash",
     bootstrap_erlexec = "erts-17.0.3/bin/erlexec",
     bootstrap_otp_sha256 = "a636ad0585b0fe85a5dfa165ba23a9c81a67cadfdd6e2a732a1cc50c51766bcf",
@@ -56,11 +56,6 @@ elixir_config.source_toolchain(
         "--without-termcap",
         "--without-wx",
     ],
-    elixir_sha256 = "1a25bbf9a9016651fc332eecc02bb9681d0b8e722c2e256e73ddb88fbce6e6b0",
-    elixir_strip_prefix = "elixir-1.20.2",
-    elixir_type = "tar.gz",
-    elixir_url = "https://github.com/elixir-lang/elixir/archive/refs/tags/v1.20.2.tar.gz",
-    elixir_version = "1.20.2",
     exec_compatible_with = [
         "@platforms//cpu:x86_64",
         "@platforms//os:linux",
@@ -68,11 +63,6 @@ elixir_config.source_toolchain(
     jobs = 8,
     make = "@source_tools//:make",
     make_options = ["SKIP_APPLICATIONS=wx debugger observer et reltool"],
-    otp_sha256 = "edef13778a449490bc183134e442a955b134d69c56075d97765d8d4951d8d2bb",
-    otp_strip_prefix = "otp-OTP-29.0.3",
-    otp_type = "tar.gz",
-    otp_url = "https://github.com/erlang/otp/archive/refs/tags/OTP-29.0.3.tar.gz",
-    otp_version = "29.0.3",
     perl = "@source_tools//:perl",
     posix_tools = ["@source_tools//:posix_tools"],
     runtime_abi = "//:source_runtime_abi",
@@ -80,8 +70,8 @@ elixir_config.source_toolchain(
 use_repo(elixir_config, "elixir_config")
 
 register_toolchains(
-    "@elixir_config//otp29_elixir120_source:otp_toolchain",
-    "@elixir_config//otp29_elixir120_source:toolchain",
+    "@elixir_config//catalog_source:otp_toolchain",
+    "@elixir_config//catalog_source:toolchain",
 )
 
 register_execution_platforms("//:source_platform")

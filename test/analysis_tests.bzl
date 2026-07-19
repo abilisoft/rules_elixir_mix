@@ -1,6 +1,7 @@
 """Regression checks and test-only helpers for the public rules."""
 
 load("//bzlmod:mix_lock_test_support.bzl", "parse_mix_lock")
+load("//bzlmod:versions.bzl", "DEFAULT_ELIXIR_VERSION", "DEFAULT_OTP_VERSION", "known_source_versions", "resolve_source_release")
 load("//private:beam_info.bzl", "ErlangAppInfo", "crypto_runtime_files", "erl_env_flags", "fips_erl_args", "otp_runtime_env", "runtime_path_erl_args", "test_erl_launcher")
 
 _FINGERPRINT_EQUALITY_EVAL = "[L,R]=init:get_plain_arguments(),{ok,LB}=file:read_file(L),{ok,RB}=file:read_file(R),case LB=:=RB of true->halt(0);false->io:format(standard_error,\"compiled artifact fingerprints differ: ~ts ~ts~n\",[L,R]),halt(1) end."
@@ -88,6 +89,38 @@ toolchain_analysis_check = rule(
     implementation = _toolchain_analysis_check_impl,
     toolchains = ["//:toolchain_type"],
 )
+
+def _version_catalog_analysis_check_impl(_ctx):
+    hexadecimal = "0123456789abcdef"
+    zero_sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+    if DEFAULT_OTP_VERSION not in known_source_versions("otp"):
+        fail("default OTP version is absent from the known-version catalog")
+    if DEFAULT_ELIXIR_VERSION not in known_source_versions("elixir"):
+        fail("default Elixir version is absent from the known-version catalog")
+
+    otp = resolve_source_release("otp", DEFAULT_OTP_VERSION)
+    elixir = resolve_source_release("elixir", DEFAULT_ELIXIR_VERSION)
+    for language, release in [("otp", otp), ("elixir", elixir)]:
+        if not release.url.startswith("https://github.com/"):
+            fail("{} source catalog URL must use HTTPS: {}".format(language, release.url))
+        if len(release.sha256) != 64 or any([release.sha256[index] not in hexadecimal for index in range(len(release.sha256))]):
+            fail("{} source catalog digest must be SHA-256".format(language))
+        if not release.strip_prefix or not release.archive_type:
+            fail("{} source catalog must declare extraction metadata".format(language))
+
+    custom = resolve_source_release(
+        "otp",
+        "custom",
+        url = "https://artifacts.example/otp.tar.zst",
+        sha256 = zero_sha256,
+        strip_prefix = "otp",
+        archive_type = "tar.zst",
+    )
+    if custom.sha256 != zero_sha256 or custom.strip_prefix != "otp" or custom.archive_type != "tar.zst":
+        fail("complete custom source override was not preserved")
+    return []
+
+version_catalog_analysis_check = rule(implementation = _version_catalog_analysis_check_impl)
 
 def _fake_directory_impl(ctx):
     output = ctx.actions.declare_directory(ctx.label.name)

@@ -31,7 +31,7 @@ load(
     "otp_toolchain",
     "rustler_nif",
 )
-load(":analysis_tests.bzl", "fake_directory", "fake_executable", "generated_file", "mix_lock_analysis_check", "toolchain_analysis_check")
+load(":analysis_tests.bzl", "fake_directory", "fake_executable", "generated_file", "mix_lock_analysis_check", "toolchain_analysis_check", "version_catalog_analysis_check")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -87,6 +87,8 @@ toolchain(
 fake_executable(name = "fake_activation")
 
 fake_executable(name = "fake_chromedriver")
+
+version_catalog_analysis_check(name = "version_catalog_analysis")
 
 fake_directory(name = "fake_crypto_sysroot")
 

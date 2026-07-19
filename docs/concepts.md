@@ -139,3 +139,9 @@ An ordinary action is acceptable only when:
 Hermetic does not mean “runs in a container.” The platform image is one declared
 part of the execution contract; it does not excuse undeclared files inside the
 image.
+
+The workspace disables sandbox networking by default and ordinary actions also
+request Bazel's `block-network` execution requirement. That request is only as
+strong as the selected sandbox or remote executor. A consumer must use an
+executor that enforces it; the ruleset cannot retrofit isolation into an
+executor that deliberately ignores execution requirements.

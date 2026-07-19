@@ -15,9 +15,11 @@ including Phoenix, LiveView, ExUnit, analysis, and releases.
 
 > [!IMPORTANT]
 > The project has not published its first stable release or official runtime
-> archive set. Pin a verified commit and provide checksum-pinned OTP and Elixir
-> archives. CI currently proves Bazel 9.2.0 with OTP 29.0.3 and Elixir 1.20.2
-> on Linux x86-64; it does not imply support for an untested platform.
+> archive set. Pin a verified commit. Source builds can use the immutable,
+> latest-tested source catalog shipped with that commit; prebuilt runtimes must
+> still come from checksum-pinned producer archives. CI proves Bazel 9.2.0 and
+> the [catalog-default source tuple](bzlmod/versions.bzl) on Linux x86-64; it
+> does not imply support for an untested platform.
 
 [Get started](docs/getting_started.md) ·
 [Browse the docs](docs/README.md) ·
@@ -120,6 +122,15 @@ Both paths are checksum-pinned, platform-constrained, and have no host-runtime
 fallback. The runtime ABI constraint must describe the real libc, loader, NIF,
 and native-library closure of the execution environment.
 
+For source builds, omitting `otp_version` and `elixir_version` selects the
+fixed latest-tested tuple embedded in the pinned `rules_elixir_mix` revision.
+It never queries a moving `latest` endpoint. Custom or not-yet-cataloged source
+versions require an explicit URL and SHA-256.
+
+A scheduled maintenance workflow checks official stable releases every six
+hours and proposes checksum-pinned catalog updates as GitHub-verified commits.
+The proposed default tuple must pass the full source-build matrix before merge.
+
 ## Hermetic by contract
 
 Ordinary build and test actions:
@@ -134,6 +145,11 @@ Ordinary build and test actions:
 OTP's upstream source build still requires declared Bash, Make, Perl, POSIX,
 and C/C++ tools. An Erlang action driver invokes those tools directly; the
 ruleset does not maintain a shell build wrapper.
+
+The repository configuration denies network access by default for local
+sandboxed actions, and rules add Bazel's `block-network` execution requirement.
+A remote executor must enforce that requirement; Bazel cannot impose a network
+namespace on an executor that ignores it.
 
 Writable workflows—generators, code reload, IEx, `phx.server`, and ElixirLS—are
 explicit local `bazel run` paths over the real checkout. They are not presented

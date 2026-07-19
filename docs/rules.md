@@ -61,7 +61,7 @@ Load public APIs from `@rules_elixir_mix//:defs.bzl`. Module extensions live in
 | API | Layer | Use it for |
 | --- | --- | --- |
 | `elixir_config.prebuilt_toolchain` | Module extension | Fetch/register checksum-pinned OTP and Elixir archives |
-| `elixir_config.source_toolchain` | Module extension | Build pristine OTP and Elixir sources with declared tools |
+| `elixir_config.source_toolchain` | Module extension | Build pristine OTP and Elixir sources from the immutable catalog or explicit pinned overrides |
 | `otp_toolchain`, `elixir_toolchain` | Low-level rule | Assemble custom toolchain registrations |
 | `otp_prebuilt_release`, `elixir_prebuilt_release` | Low-level rule | Validate/expose extracted runtime trees |
 | `otp_source_release`, `elixir_source_release` | Low-level rule | Build source runtime trees |
