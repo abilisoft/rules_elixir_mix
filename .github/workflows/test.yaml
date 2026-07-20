@@ -34,6 +34,8 @@ jobs:
             runner: ubuntu-24.04-arm
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
+    env:
+      BAZEL_PLATFORM_FLAGS: --platforms=//:ci_execution_platform_${{ matrix.arch }} --extra_execution_platforms=//:ci_execution_platform_${{ matrix.arch }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -51,6 +53,7 @@ jobs:
 
           bazel test
           ${BAZEL_REMOTE_FALLBACK}
+          ${BAZEL_PLATFORM_FLAGS}
           --remote_header=x-buildbuddy-api-key="${BUILDBUDDY_ORG_API_KEY}"
           //:buildifier_test
       - name: Analyze public rule surface
@@ -60,6 +63,7 @@ jobs:
 
           bazel build --nobuild
           ${BAZEL_REMOTE_FALLBACK}
+          ${BAZEL_PLATFORM_FLAGS}
           --remote_header=x-buildbuddy-api-key="${BUILDBUDDY_ORG_API_KEY}"
           //test:analysis_fixture
           //test:analysis_test_lib
@@ -93,6 +97,7 @@ jobs:
 
           bazel build --nobuild
           ${BAZEL_REMOTE_FALLBACK}
+          ${BAZEL_PLATFORM_FLAGS}
           --remote_header=x-buildbuddy-api-key="${BUILDBUDDY_ORG_API_KEY}"
           --extra_toolchains=//test:fips_otp_toolchain,//test:fips_toolchain
           //test:fips_analysis_fixture
