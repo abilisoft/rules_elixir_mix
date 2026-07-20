@@ -4,6 +4,7 @@ load(
     "elixir_release_test",
     "mix_library",
     "mix_release",
+    "mix_test",
 )
 load(":rules_fips_sdk.bzl", "rules_fips_crypto_sdk")
 
@@ -51,12 +52,43 @@ elixir_fips_runtime_test(
 )
 
 mix_library(
+    name = "test_app",
+    srcs = glob(["lib/**/*.ex"]),
+    app_name = "source_integration_app",
+    config = glob(["config/*.exs"]),
+    lockfile = "mix.lock",
+    mix_config = "mix.exs",
+    mix_env = "test",
+    runtime_deps = [
+        "@mix_deps//:bandit",
+        "@mix_deps//:jason",
+        "@mix_deps//:phoenix",
+        "@mix_deps//:phoenix_html",
+        "@mix_deps//:phoenix_live_view",
+    ],
+)
+
+mix_test(
+    name = "test",
+    srcs = glob(["test/**/*.exs"]),
+    lib = ":test_app",
+)
+
+mix_library(
     name = "app",
     srcs = glob(["lib/**/*.ex"]),
     app_name = "source_integration_app",
-    config = ["config/runtime.exs"],
+    config = glob(["config/*.exs"]),
+    lockfile = "mix.lock",
     mix_config = "mix.exs",
     mix_env = "prod",
+    runtime_deps = [
+        "@mix_deps//:bandit",
+        "@mix_deps//:jason",
+        "@mix_deps//:phoenix",
+        "@mix_deps//:phoenix_html",
+        "@mix_deps//:phoenix_live_view",
+    ],
 )
 
 mix_release(

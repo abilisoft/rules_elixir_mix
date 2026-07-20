@@ -623,7 +623,8 @@ link_erts_bin(Source, Destination, InstallRoot, Wrapper0, ExecutionRoot) ->
                     )
                 end,
                 Children
-            );
+            ),
+            ok = link_erl_alias(Destination, Children, none);
         Wrapper0 ->
             Wrapper = absolute_build_path(Wrapper0, ExecutionRoot),
             Launcher = filename:join(Destination, ".runtime-launch"),
@@ -643,7 +644,25 @@ link_erts_bin(Source, Destination, InstallRoot, Wrapper0, ExecutionRoot) ->
                     ok = file:make_link(Launcher, filename:join(Destination, Child))
                 end,
                 Children
-            )
+            ),
+            ok = link_erl_alias(Destination, Children, Launcher)
+    end.
+
+link_erl_alias(Destination, Children, Wrapper) ->
+    true = lists:member("erlexec", Children),
+    case lists:member("erl", Children) of
+        true -> ok;
+        false ->
+            case Wrapper of
+                none ->
+                    file:make_symlink("erlexec", filename:join(Destination, "erl"));
+                _ ->
+                    ok = file:make_symlink(
+                        ".real-erlexec",
+                        filename:join(Destination, ".real-erl")
+                    ),
+                    file:make_link(Wrapper, filename:join(Destination, "erl"))
+            end
     end.
 
 copy_executable(Source, Destination) ->

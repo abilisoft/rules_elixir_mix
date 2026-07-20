@@ -99,6 +99,16 @@ elixir_config.source_toolchain(
 )
 use_repo(elixir_config, "elixir_config")
 
+elixir_packages = use_extension(
+    "@rules_elixir_mix//bzlmod:packages.bzl",
+    "elixir_packages",
+)
+elixir_packages.mix_lock(
+    name = "mix_deps",
+    lockfile = "//:mix.lock",
+)
+use_repo(elixir_packages, "hex_pm", "mix_deps")
+
 register_toolchains(
     "@elixir_config//catalog_source_arm64:otp_toolchain",
     "@elixir_config//catalog_source_arm64:toolchain",

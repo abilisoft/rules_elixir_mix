@@ -70,7 +70,7 @@ the other.
 | Rustler/NIF artifact mapping | Analysis tested |
 | `mix_local` warm-cache workflow | Integration tested |
 | Phoenix server and ElixirLS local entry points | Analysis tested |
-| Static and provider-backed generic FIPS contracts | Source/runtime tested on AMD64 and ARM64 against the normalized `rules_fips` SDK |
+| Static and provider-backed generic FIPS contracts | A downstream Phoenix/LiveView app builds, tests, releases, and boots on AMD64 and ARM64 against the normalized `rules_fips` SDK |
 | macOS, Windows, cross-built ERTS/NIFs | Not claimed |
 | Official downloadable runtime matrix | Not published yet |
 

@@ -209,7 +209,7 @@ jobs:
           tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner
           --format=gnu -czf /tmp/rules-elixir-mix-ci-otp-bootstrap-x86_64.tar.gz
           -C /usr/local/lib/erlang .
-      - name: Test source-built OTP, Elixir, FIPS, and release runtime
+      - name: Test source-built OTP, Elixir, Phoenix, LiveView, FIPS, and release runtime
         if: ${{ env.BUILDBUDDY_ORG_API_KEY != '' }}
         working-directory: source_integration
         # These fixed environment values intentionally contain Bazel argument lists.
@@ -222,6 +222,7 @@ jobs:
           --remote_header=x-buildbuddy-api-key="${BUILDBUDDY_ORG_API_KEY}"
           //:fips_runtime
           //:release_test
+          //:test
       - name: Analyze the source-toolchain graph without remote credentials
         if: ${{ env.BUILDBUDDY_ORG_API_KEY == '' }}
         working-directory: source_integration
@@ -247,6 +248,7 @@ jobs:
           --remote_header=x-buildbuddy-api-key="${BUILDBUDDY_ORG_API_KEY}"
           //:fips_runtime
           //:release_test
+          //:test
 
   validate-gate:
     name: validate
