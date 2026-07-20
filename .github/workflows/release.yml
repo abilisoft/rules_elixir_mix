@@ -27,7 +27,7 @@ jobs:
     steps:
       - name: Require a signed annotated tag on main
         id: tag
-        uses: actions/github-script@d746ffe35508b1917358783b479e04febd2b8f71 # v9.0.0
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           TAG_NAME: ${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.ref_name }}
         with:
@@ -83,7 +83,7 @@ jobs:
           persist-credentials: false
           ref: ${{ needs.verify-tag.outputs.commit_sha }}
       - name: Require the tag and module versions to match
-        uses: actions/github-script@d746ffe35508b1917358783b479e04febd2b8f71 # v9.0.0
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           TAG_NAME: ${{ needs.verify-tag.outputs.tag_name }}
         with:
@@ -96,7 +96,7 @@ jobs:
               core.setFailed(`MODULE.bazel version ${match?.[1] || "missing"} does not match ${expected}`);
             }
       - name: Publish GitHub release
-        uses: softprops/action-gh-release@fe965f7af51af5f2602596916f38a38df2e33de0 # v3.0.2
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         with:
           generate_release_notes: true
           make_latest: true
