@@ -1,6 +1,6 @@
 """Build pristine Elixir sources against a declared OTP runtime."""
 
-load("//private:beam_info.bzl", "OtpInfo", "crypto_exec_inputs", "crypto_exec_tools", "erl_env_flags", "fips_erl_args", "otp_runtime_env")
+load("//private:beam_info.bzl", "OtpInfo", "erl_env_flags", "execution_root_path", "fips_erl_args", "otp_runtime_env", "path_join", "prepare_crypto_runtime")
 load("//private:elixir_info.bzl", "ElixirInfo", "otp_info_from_dependency")
 load("//private:runtime_archive_info.bzl", "BeamRuntimeSourceInfo")
 
@@ -71,6 +71,7 @@ def _elixir_source_release_impl(ctx):
     _validate_make_options(ctx.attr.make_options)
 
     otp = otp_info_from_dependency(ctx.attr.otp)
+    activation = prepare_crypto_runtime(ctx, otp, ctx.label.name + "_crypto_state")
     child_erl_aflags = erl_env_flags(
         ["+fnu"] + (["-crypto", "fips_mode", "true"] if otp.fips == "required" else []),
     )
@@ -79,12 +80,23 @@ def _elixir_source_release_impl(ctx):
     ctx.actions.write(version_file, ctx.attr.version + "\n")
 
     tool_files = ctx.files.posix_tools
+    posix_tool_executables = []
+    posix_tools = []
+    for target in ctx.attr.posix_tools:
+        files_to_run = target[DefaultInfo].files_to_run
+        if files_to_run.executable == None:
+            fail("posix_tools entries must be executable targets: {}".format(target.label))
+        posix_tool_executables.append(files_to_run.executable)
+        posix_tools.append(files_to_run)
+    if not posix_tool_executables:
+        fail("elixir_source_release requires a hermetic POSIX toolbox")
+    otp_exec_erts_bin = otp.erts_bin
     path_directories = _path_directories([
         ctx.executable.bash,
         ctx.executable.make,
-    ] + tool_files) + [otp.erts_bin]
+    ] + posix_tool_executables) + [otp_exec_erts_bin]
     environment = {
-        "BINDIR": "{path, " + _erl_string(otp.erts_bin) + "}",
+        "BINDIR": "{path, " + _erl_string(otp_exec_erts_bin) + "}",
         "EMU": _erl_string("beam"),
         "ERL_ROOTDIR": "{path, " + _erl_string(otp.erlang_home) + "}",
         "PATH": "{path_list, " + _term_list(path_directories) + "}",
@@ -102,9 +114,9 @@ def _elixir_source_release_impl(ctx):
         "#{\n" + ",\n".join([
             "  bash => {}".format(_erl_string(ctx.executable.bash.path)),
             "  environment => {}".format(environment_term),
-            "  erlexec => {}".format(_erl_string(otp.erlexec.path)),
+            "  erlexec => {}".format(_erl_string(path_join(otp_exec_erts_bin, "erlexec"))),
             "  erl_aflags => {}".format(_erl_string(child_erl_aflags)),
-            "  escript => {}".format(_erl_string(otp.erts_bin + "/escript")),
+            "  escript => {}".format(_erl_string(path_join(otp_exec_erts_bin, "escript"))),
             "  jobs => {}".format(ctx.attr.jobs),
             "  make => {}".format(_erl_string(ctx.executable.make.path)),
             "  make_options => {}".format(_term_list(ctx.attr.make_options)),
@@ -119,15 +131,17 @@ def _elixir_source_release_impl(ctx):
     args.add_all([
         "-noshell",
         "+fnu",
-    ] + fips_erl_args(otp) + [
+    ] + fips_erl_args(otp, activate = False) + [
         "-eval",
         _DRIVER_EVAL,
         "-extra",
         ctx.file._normalizer,
         ctx.file._driver,
         config,
+        execution_root_path("."),
     ])
-    action_env = otp_runtime_env(otp)
+    action_env = otp_runtime_env(otp, use_execution_overlay = False)
+    action_env.update(activation.environment)
     action_env.update({
         "HOME": output.path + ".work/driver_home",
         "LANG": "C",
@@ -140,12 +154,12 @@ def _elixir_source_release_impl(ctx):
         arguments = [args],
         inputs = depset(
             direct = ctx.files.srcs + tool_files + [ctx.file._driver, ctx.file._normalizer, config],
-            transitive = [otp.runtime_files, crypto_exec_inputs(otp)],
+            transitive = [otp.runtime_files, activation.files],
         ),
         tools = [
             ctx.attr.bash[DefaultInfo].files_to_run,
             ctx.attr.make[DefaultInfo].files_to_run,
-        ] + crypto_exec_tools(otp),
+        ] + posix_tools,
         outputs = [output],
         env = action_env,
         execution_requirements = {"block-network": "1"},
@@ -184,7 +198,6 @@ elixir_source_release = rule(
         "otp": attr.label(
             mandatory = True,
             providers = [[OtpInfo], [platform_common.ToolchainInfo]],
-            cfg = "exec",
         ),
         "bash": attr.label(mandatory = True, executable = True, allow_files = True, cfg = "exec"),
         "make": attr.label(mandatory = True, executable = True, allow_files = True, cfg = "exec"),

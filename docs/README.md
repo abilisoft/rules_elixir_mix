@@ -10,7 +10,7 @@ checksum-pinned inputs, resolved toolchains, deterministic outputs, and small
 cacheable actions—while Mix remains responsible for Elixir semantics.
 
 > [!IMPORTANT]
-> [`v0.1.0`](https://github.com/abilisoft/rules_elixir_mix/releases/tag/v0.1.0)
+> [`v0.2.0`](https://github.com/abilisoft/rules_elixir_mix/releases/tag/v0.2.0)
 > is a signed GitHub release for direct commit pinning. It is not published to
 > the Bazel Central Registry, and this project has not published an official
 > runtime archive set. Bring checksum-pinned OTP and Elixir archives. CI proves
@@ -70,7 +70,7 @@ the other.
 | Rustler/NIF artifact mapping | Analysis tested |
 | `mix_local` warm-cache workflow | Integration tested |
 | Phoenix server and ElixirLS local entry points | Analysis tested |
-| Static and provider-backed generic FIPS contracts | Analysis tested; requires producer-backed runtime proof |
+| Static and provider-backed generic FIPS contracts | Source/runtime tested on AMD64 and ARM64 against the normalized `rules_fips` SDK |
 | macOS, Windows, cross-built ERTS/NIFs | Not claimed |
 | Official downloadable runtime matrix | Not published yet |
 

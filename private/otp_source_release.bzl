@@ -3,7 +3,7 @@
 load("@rules_cc//cc:action_names.bzl", "CPP_COMPILE_ACTION_NAME", "CPP_LINK_DYNAMIC_LIBRARY_ACTION_NAME", "CPP_LINK_EXECUTABLE_ACTION_NAME", "CPP_LINK_STATIC_LIBRARY_ACTION_NAME", "C_COMPILE_ACTION_NAME", "STRIP_ACTION_NAME")
 load("@rules_cc//cc:find_cc_toolchain.bzl", "CC_TOOLCHAIN_TYPE", "use_cc_toolchain")
 load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
-load("//private:beam_info.bzl", "OtpInfo", "otp_runtime_env")
+load("//private:beam_info.bzl", "OtpInfo", "execution_erlexec", "otp_runtime_env")
 load("//private:otp_crypto_sdk.bzl", "crypto_sdk_info")
 load("//private:runtime_archive_info.bzl", "BeamRuntimeSourceInfo")
 
@@ -358,28 +358,47 @@ def _otp_source_release_impl(ctx):
 
     install = ctx.actions.declare_directory(ctx.label.name + "_runtime")
     erts_bin = ctx.actions.declare_directory(ctx.label.name + "_erts_bin")
+    exec_erts_bin = ctx.actions.declare_directory(ctx.label.name + "_exec_erts_bin")
     erl = ctx.actions.declare_file(ctx.label.name + "_erl")
     version_file = ctx.actions.declare_file(ctx.label.name + "_version")
     ctx.actions.write(version_file, ctx.attr.version + "\n")
 
     configure_options = ctx.attr.configure_options
     _validate_configure_options(configure_options)
+    if ctx.attr.cross_compile and not any([option.startswith("--host=") for option in configure_options]):
+        fail("cross_compile=True requires an explicit --host=<target-triplet> configure option")
     _validate_make_options(ctx.attr.make_options)
 
     tool_files = ctx.files.posix_tools
+    posix_tool_executables = []
+    posix_tools = []
+    for target in ctx.attr.posix_tools:
+        files_to_run = target[DefaultInfo].files_to_run
+        if files_to_run.executable == None:
+            fail("posix_tools entries must be executable targets: {}".format(target.label))
+        posix_tool_executables.append(files_to_run.executable)
+        posix_tools.append(files_to_run)
+    if not posix_tool_executables:
+        fail("otp_source_release requires a hermetic POSIX toolbox")
+    posix_bin = posix_tool_executables[0].dirname
     tool_paths = [
         ctx.executable.bash,
         ctx.executable.make,
-    ] + tool_files
+    ] + posix_tool_executables
     tool_paths.append(ctx.executable.perl)
     path_directories = _path_directories(tool_paths + [compiler, cxx, linker, dynamic_linker, archiver, strip])
 
     owned_environment = {
         "AR": "{path, " + _erl_string(archiver) + "}",
         "CC": "{path, " + _erl_string(compiler) + "}",
+        "CP": "{path, " + _erl_string(posix_bin + "/cp") + "}",
         "CXX": "{path, " + _erl_string(cxx) + "}",
         "LD": "{path, " + _erl_string(linker) + "}",
+        "LN": "{path, " + _erl_string(posix_bin + "/ln") + "}",
+        "MKDIR": "{path, " + _erl_string(posix_bin + "/mkdir") + "}",
         "PATH": "{path_list, " + _term_list(path_directories) + "}",
+        "RANLIB": "{path, " + _erl_string(archiver.removesuffix("/ar") + "/ranlib") + "}",
+        "RM": "{path, " + _erl_string(posix_bin + "/rm") + "}",
         "SHELL": "{path, " + _erl_string(ctx.executable.bash.path) + "}",
         "CONFIG_SHELL": "{path, " + _erl_string(ctx.executable.bash.path) + "}",
         "STRIP": "{path, " + _erl_string(strip) + "}",
@@ -415,22 +434,28 @@ def _otp_source_release_impl(ctx):
         "  bash => {}".format(_erl_string(ctx.executable.bash.path)),
         "  bootstrap_erlexec => {}".format(_erl_string(bootstrap.erlexec.path)),
         "  bootstrap_erts_bin => {}".format(_erl_string(bootstrap.erts_bin)),
+        "  bootstrap_launcher => {}".format(_erl_string(ctx.executable.bootstrap_launcher.path)),
         "  bootstrap_root => {}".format(_erl_string(bootstrap.erlang_home)),
         "  cflags => {}".format(_term_list(cflags)),
         "  arflags => {}".format(_term_list(archive.flags)),
         "  configure_options => {}".format(_term_list(configure_options)),
         "  crypto_activation_args => {}".format(_term_list(crypto.activation_args) if crypto else "[]"),
         "  crypto_activation_tool => {}".format(_erl_string(crypto.activation_exec_tool.executable.path) if crypto and crypto.activation_exec_tool else "none"),
+        "  crypto_execution_wrapper => {}".format(_erl_string(crypto.execution_wrapper.executable.path) if crypto and crypto.execution_wrapper else "none"),
+        "  crypto_execution_exec_wrapper => {}".format(_erl_string(crypto.execution_exec_wrapper.executable.path) if crypto and crypto.execution_exec_wrapper else "none"),
         "  crypto_linkopts => {}".format(_term_list(crypto.linkopts) if crypto else "[]"),
+        "  crypto_prepared_state => {}".format(_erl_string(crypto.prepared_state.path) if crypto and crypto.prepared_state else "none"),
         "  crypto_runtime_environment => {}".format("#{" + ", ".join([
             "{} => {}".format(_erl_string(key), _erl_string(crypto.runtime_environment[key]))
             for key in sorted(crypto.runtime_environment.keys())
         ]) + "}" if crypto else "#{}"),
         "  crypto_sdk => {}".format(_erl_string(crypto.sysroot.path) if crypto else "none"),
         "  cxxflags => {}".format(_term_list(cxxflags)),
+        "  cross_compiling => {}".format("true" if ctx.attr.cross_compile else "false"),
         "  environment => {}".format(environment_term),
         "  erl_output => {}".format(_erl_string(erl.path)),
         "  erts_bin_output => {}".format(_erl_string(erts_bin.path)),
+        "  exec_erts_bin_output => {}".format(_erl_string(exec_erts_bin.path)),
         "  fips_required => {}".format("true" if ctx.attr.fips == "required" else "false"),
         "  jobs => {}".format(ctx.attr.jobs),
         "  ded_ld => {}".format(_erl_string(dynamic_linker)),
@@ -463,8 +488,8 @@ def _otp_source_release_impl(ctx):
     ])
     direct_inputs = ctx.files.srcs + tool_files + [ctx.file._driver, ctx.file._normalizer, ctx.file.source_directories, config]
     crypto_inputs = depset(
-        direct = [crypto.sysroot],
-        transitive = [crypto.exec_files],
+        direct = [crypto.sysroot] + ([crypto.prepared_state] if crypto.prepared_state else []),
+        transitive = [crypto.exec_files, crypto.files],
     ) if crypto else depset()
 
     action_env = otp_runtime_env(bootstrap)
@@ -475,14 +500,14 @@ def _otp_source_release_impl(ctx):
         "TZ": "UTC",
     })
     ctx.actions.run(
-        executable = bootstrap.erlexec,
+        executable = execution_erlexec(bootstrap),
         arguments = [args],
         inputs = depset(
             direct = direct_inputs,
             transitive = [bootstrap.runtime_files, cc_toolchain.all_files, crypto_inputs],
         ),
-        tools = [ctx.attr.bash[DefaultInfo].files_to_run, ctx.attr.make[DefaultInfo].files_to_run, ctx.attr.perl[DefaultInfo].files_to_run] + ([crypto.activation_exec_tool] if crypto and crypto.activation_exec_tool else []),
-        outputs = [install, erts_bin, erl],
+        tools = [ctx.attr.bootstrap_launcher[DefaultInfo].files_to_run, ctx.attr.bash[DefaultInfo].files_to_run, ctx.attr.make[DefaultInfo].files_to_run, ctx.attr.perl[DefaultInfo].files_to_run] + posix_tools + ([crypto.activation_exec_tool] if crypto and crypto.activation_exec_tool else []),
+        outputs = [install, erts_bin, exec_erts_bin, erl],
         env = action_env,
         execution_requirements = _execution_requirements(feature_configuration, [
             C_COMPILE_ACTION_NAME,
@@ -498,7 +523,10 @@ def _otp_source_release_impl(ctx):
         use_default_shell_env = False,
     )
 
-    runtime_files = depset(direct = [install, erts_bin, erl, version_file])
+    runtime_files = depset(
+        direct = [install, erts_bin, exec_erts_bin, erl, version_file],
+        transitive = [crypto.exec_files] if crypto else [],
+    )
     erlang_home = install.path + "/lib/erlang"
     erlang_home_short_path = install.short_path + "/lib/erlang"
     return [
@@ -518,6 +546,8 @@ def _otp_source_release_impl(ctx):
             erlexec = erl,
             erts_bin = erts_bin.path,
             erts_bin_short_path = erts_bin.short_path,
+            exec_erts_bin = exec_erts_bin.path,
+            exec_erts_bin_short_path = exec_erts_bin.short_path,
             fips = ctx.attr.fips,
             runtime_files = runtime_files,
             static_crypto_nif = ctx.attr.static_crypto_nif,
@@ -531,11 +561,13 @@ otp_source_release = rule(
         "version": attr.string(mandatory = True),
         "srcs": attr.label_list(mandatory = True, allow_files = True),
         "bootstrap_otp": attr.label(mandatory = True, providers = [OtpInfo], cfg = config.exec(_OTP_BUILD_EXEC_GROUP)),
+        "bootstrap_launcher": attr.label(mandatory = True, executable = True, cfg = config.exec(_OTP_BUILD_EXEC_GROUP)),
         "bash": attr.label(mandatory = True, executable = True, allow_files = True, cfg = config.exec(_OTP_BUILD_EXEC_GROUP)),
         "make": attr.label(mandatory = True, executable = True, allow_files = True, cfg = config.exec(_OTP_BUILD_EXEC_GROUP)),
         "posix_tools": attr.label_list(mandatory = True, allow_files = True, cfg = config.exec(_OTP_BUILD_EXEC_GROUP)),
         "perl": attr.label(mandatory = True, executable = True, allow_files = True, cfg = config.exec(_OTP_BUILD_EXEC_GROUP)),
-        "crypto_sdk": attr.label(allow_files = True, cfg = config.exec(_OTP_BUILD_EXEC_GROUP)),
+        "crypto_sdk": attr.label(allow_files = True),
+        "cross_compile": attr.bool(default = False),
         "fips": attr.string(default = "disabled", values = ["disabled", "required"]),
         "configure_options": attr.string_list(),
         "make_options": attr.string_list(),

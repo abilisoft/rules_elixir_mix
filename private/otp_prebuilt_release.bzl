@@ -1,6 +1,6 @@
 """Expose an extracted, hermetic Erlang/OTP runtime."""
 
-load("//private:beam_info.bzl", "OtpInfo", "fips_erl_args", "otp_runtime_env")
+load("//private:beam_info.bzl", "OtpInfo", "fips_erl_args", "otp_runtime_env", "prepare_crypto_runtime")
 load("//private:otp_crypto_sdk.bzl", "crypto_sdk_info")
 
 def _erl_string(value):
@@ -29,6 +29,8 @@ def _otp_prebuilt_release_impl(ctx):
     erts_bin_short_path = ctx.file.erlexec.short_path.rsplit("/", 1)[0]
     version_file = ctx.actions.declare_file(ctx.label.name + "_version")
     state = version_file.path + ".state"
+    otp_contract = struct(crypto_sdk = crypto, fips = ctx.attr.fips)
+    activation = prepare_crypto_runtime(ctx, otp_contract, ctx.label.name + "_crypto_state")
     crypto_checks = []
     if ctx.attr.static_crypto_nif or ctx.attr.fips == "required":
         crypto_checks.extend([
@@ -62,13 +64,15 @@ def _otp_prebuilt_release_impl(ctx):
     args = ctx.actions.args()
     args.add_all(
         ["-noshell"] +
-        fips_erl_args(struct(fips = ctx.attr.fips, crypto_sdk = crypto)) +
+        fips_erl_args(otp_contract, activate = False) +
         ["-eval", expression],
     )
     environment = otp_runtime_env(struct(
+        crypto_sdk = crypto,
         erlang_home = erlang_home,
         erts_bin = erts_bin,
     ))
+    environment.update(activation.environment)
     environment.update({
         "HOME": state + "/home",
         "LANG": "C",
@@ -76,18 +80,13 @@ def _otp_prebuilt_release_impl(ctx):
         "RULES_ELIXIR_MIX_CRYPTO_STATE": state,
         "TZ": "UTC",
     })
-    crypto_inputs = depset(
-        direct = [crypto.sysroot],
-        transitive = [crypto.exec_files],
-    ) if crypto and crypto.activation_exec_tool else depset()
     ctx.actions.run(
         executable = ctx.file.erlexec,
         arguments = [args],
         inputs = depset(
             direct = ctx.files.srcs,
-            transitive = [crypto_inputs],
+            transitive = [activation.files],
         ),
-        tools = [crypto.activation_exec_tool] if crypto and crypto.activation_exec_tool else [],
         outputs = [version_file],
         env = environment,
         execution_requirements = {"block-network": "1"},
@@ -107,6 +106,8 @@ def _otp_prebuilt_release_impl(ctx):
             erlexec = ctx.file.erlexec,
             erts_bin = erts_bin,
             erts_bin_short_path = erts_bin_short_path,
+            exec_erts_bin = erts_bin,
+            exec_erts_bin_short_path = erts_bin_short_path,
             fips = ctx.attr.fips,
             runtime_files = runtime_files,
             static_crypto_nif = ctx.attr.static_crypto_nif,

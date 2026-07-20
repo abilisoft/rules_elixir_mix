@@ -1,6 +1,6 @@
 """Expose an extracted, hermetic Elixir runtime."""
 
-load("//private:beam_info.bzl", "OtpInfo", "crypto_exec_inputs", "crypto_exec_tools", "fips_erl_args", "otp_runtime_env", "path_join")
+load("//private:beam_info.bzl", "OtpInfo", "execution_erlexec", "execution_erts_bin", "fips_erl_args", "otp_runtime_env", "path_join", "prepare_crypto_runtime")
 load("//private:elixir_info.bzl", "ElixirInfo", "otp_info_from_dependency")
 
 def _erl_string(value):
@@ -16,6 +16,7 @@ def _elixir_prebuilt_release_impl(ctx):
     elixir_home_short_path = ctx.file.home_marker.short_path.rsplit("/", 2)[0]
     version_file = ctx.actions.declare_file(ctx.label.name + "_version")
     state = ctx.actions.declare_directory(ctx.label.name + "_verification_state")
+    activation = prepare_crypto_runtime(ctx, otp_info, ctx.label.name + "_crypto_state")
     expression = "File.mkdir_p!({state});expected={expected};^expected=File.read!({marker})|>String.trim();^expected=System.version();File.write!({output},expected<>\"\\n\");File.rm_rf!({state});File.mkdir_p!({state})".format(
         expected = _erl_string(ctx.attr.version),
         marker = _erl_string(ctx.file.version_marker.path),
@@ -26,7 +27,7 @@ def _elixir_prebuilt_release_impl(ctx):
     args.add_all([
         "-noshell",
         "+fnu",
-    ] + fips_erl_args(otp_info) + [
+    ] + fips_erl_args(otp_info, activate = False) + [
         "-s",
         "elixir",
         "start_cli",
@@ -35,20 +36,20 @@ def _elixir_prebuilt_release_impl(ctx):
         expression,
     ])
     environment = otp_runtime_env(otp_info)
+    environment.update(activation.environment)
     environment.update({
         "ERL_LIBS": path_join(elixir_home, "lib"),
         "HOME": state.path + "/home",
         "LANG": "C",
         "LC_ALL": "C",
-        "PATH": otp_info.erts_bin,
+        "PATH": execution_erts_bin(otp_info),
         "RULES_ELIXIR_MIX_CRYPTO_STATE": state.path,
         "TZ": "UTC",
     })
     ctx.actions.run(
-        executable = otp_info.erlexec,
+        executable = execution_erlexec(otp_info),
         arguments = [args],
-        inputs = depset(direct = ctx.files.srcs, transitive = [otp_info.runtime_files, crypto_exec_inputs(otp_info)]),
-        tools = crypto_exec_tools(otp_info),
+        inputs = depset(direct = ctx.files.srcs, transitive = [otp_info.runtime_files, activation.files]),
         outputs = [version_file, state],
         env = environment,
         execution_requirements = {"block-network": "1"},

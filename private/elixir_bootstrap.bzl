@@ -1,6 +1,6 @@
 """Small shell-free bootstrap rule used only to break the Hex/Jason cycle."""
 
-load("//private:beam_info.bzl", "ErlangAppInfo", "crypto_exec_inputs", "crypto_exec_tools", "fips_erl_args", "otp_runtime_env")
+load("//private:beam_info.bzl", "ErlangAppInfo", "execution_erlexec", "execution_erts_bin", "fips_erl_args", "otp_runtime_env", "prepare_crypto_runtime")
 
 _COMPILE = """
 [output, fingerprint, app, version | sources] = System.argv()
@@ -39,11 +39,12 @@ def _elixir_bootstrap_app_impl(ctx):
     output = ctx.actions.declare_directory(ctx.label.name + "_lib")
     fingerprint = ctx.actions.declare_file(ctx.label.name + "_fingerprint")
     toolchain = ctx.toolchains["//:toolchain_type"]
+    activation = prepare_crypto_runtime(ctx, toolchain.otpinfo, ctx.label.name + "_crypto_state")
     args = ctx.actions.args()
     args.add_all([
         "-noshell",
         "+fnu",
-    ] + fips_erl_args(toolchain.otpinfo) + [
+    ] + fips_erl_args(toolchain.otpinfo, activate = False) + [
         "-s",
         "elixir",
         "start_cli",
@@ -59,22 +60,22 @@ def _elixir_bootstrap_app_impl(ctx):
     args.add_all(ctx.files.srcs)
 
     environment = otp_runtime_env(toolchain.otpinfo)
+    environment.update(activation.environment)
     environment.update({
         "ERL_COMPILER_OPTIONS": "deterministic",
         "ERL_LIBS": toolchain.elixirinfo.elixir_home + "/lib",
         "HOME": output.path + "/.state/home",
         "LANG": "C",
         "LC_ALL": "C",
-        "PATH": toolchain.otpinfo.erts_bin,
+        "PATH": execution_erts_bin(toolchain.otpinfo),
         "RULES_ELIXIR_MIX_CRYPTO_STATE": output.path + "/.state/crypto",
         "SOURCE_DATE_EPOCH": "946684800",
         "TZ": "UTC",
     })
     ctx.actions.run(
-        executable = toolchain.otpinfo.erlexec,
+        executable = execution_erlexec(toolchain.otpinfo),
         arguments = [args],
-        inputs = depset(direct = ctx.files.srcs, transitive = [toolchain.runtime_files, crypto_exec_inputs(toolchain.otpinfo)]),
-        tools = crypto_exec_tools(toolchain.otpinfo),
+        inputs = depset(direct = ctx.files.srcs, transitive = [toolchain.runtime_files, activation.files]),
         outputs = [output, fingerprint],
         env = environment,
         execution_requirements = {"block-network": "1"},

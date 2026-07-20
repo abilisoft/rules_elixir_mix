@@ -20,7 +20,7 @@ your execution platform.
 
 ## 1. Pin the ruleset
 
-The signed [`v0.1.0` GitHub release](https://github.com/abilisoft/rules_elixir_mix/releases/tag/v0.1.0)
+The signed [`v0.2.0` GitHub release](https://github.com/abilisoft/rules_elixir_mix/releases/tag/v0.2.0)
 is intentionally not published to BCR yet. Consume it through the full,
 GitHub-verified commit referenced by that tag:
 
@@ -32,22 +32,30 @@ module(
 
 bazel_dep(
     name = "rules_elixir_mix",
-    version = "0.1.0",
+    version = "0.2.0",
 )
 
 git_override(
     module_name = "rules_elixir_mix",
     remote = "https://github.com/abilisoft/rules_elixir_mix.git",
-    commit = "ea6194a031302ee7a1a40539cd78f3f280d3bfd3",
+    commit = "<full peeled commit ID for v0.2.0>",
 )
 
 bazel_dep(name = "platforms", version = "1.1.0")
 ```
 
-That commit is the immutable target of the verified `v0.1.0` tag. For a later
-release, replace both the declared version and commit with that release's
-values. Never track a branch or movable tag. Repository downloads, toolchains,
-and package archives must remain content-addressed.
+Resolve and verify the annotated tag before copying its peeled commit ID:
+
+```console
+git fetch https://github.com/abilisoft/rules_elixir_mix.git tag v0.2.0
+git verify-tag FETCH_HEAD
+git rev-parse FETCH_HEAD^{}
+```
+
+For a later release, replace both the declared version and commit with that
+release's values. Never track a branch or a tag name in `git_override`.
+Repository downloads, toolchains, and package archives must remain
+content-addressed.
 
 ## 2. Name the runtime ABI
 

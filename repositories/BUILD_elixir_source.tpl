@@ -16,20 +16,20 @@ otp_prebuilt_release(
     version = "%{BOOTSTRAP_OTP_VERSION}",
     version_marker = "%{BOOTSTRAP_VERSION_MARKER}",
     exec_compatible_with = [
-%{EXEC_CONSTRAINTS}    ],
-    target_compatible_with = [
-%{TARGET_CONSTRAINTS}    ],
+%{BOOTSTRAP_EXEC_CONSTRAINTS}    ],
 )
 
 otp_source_release(
     name = "otp",
     bash = "%{BASH}",
+    bootstrap_launcher = "%{BOOTSTRAP_LAUNCHER}",
     bootstrap_otp = ":bootstrap_otp",
     configure_options = [
 %{CONFIGURE_OPTIONS}    ],
     copts = [
 %{COPTS}    ],
     crypto_sdk = %{CRYPTO_SDK},
+    cross_compile = %{CROSS_COMPILE},
     cxxopts = [
 %{CXXOPTS}    ],
     jobs = %{JOBS},

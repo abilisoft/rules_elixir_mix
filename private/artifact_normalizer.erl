@@ -1,6 +1,6 @@
 %% Reproducibility checks for source-built OTP and Elixir artifacts.
 -module(artifact_normalizer).
--export([normalize_tree/3, normalize_beams/3, prune_script_launchers/1,
+-export([normalize_tree/3, normalize_beams/3, normalize_elf_runtime/3, prune_script_launchers/1,
          scrub_erts_build_metadata/1, scrub_erts_commandline_flags/1,
          assert_absent/2, assert_beams_absent/2]).
 
@@ -20,6 +20,167 @@ normalize_beams(Root, From0, To0) ->
             _ -> ok
         end
     end).
+
+normalize_elf_runtime(Root, Interpreter0, Runpath0) ->
+    Interpreter = iolist_to_binary(Interpreter0),
+    Runpath = iolist_to_binary(Runpath0),
+    walk(Root, fun(Path) -> normalize_elf_file(Path, Interpreter, Runpath) end).
+
+normalize_elf_file(Path, Interpreter, Runpath) ->
+    {ok, Binary} = file:read_file(Path),
+    case Binary of
+        <<16#7f, $E, $L, $F, 2, 1, _/binary>> ->
+            {ProgramOffset, SectionOffset, ProgramEntrySize, ProgramCount,
+             SectionEntrySize, SectionCount} = elf_layout(Binary),
+            WithInterpreter = normalize_elf_interpreter(
+                Binary,
+                ProgramOffset,
+                ProgramEntrySize,
+                ProgramCount,
+                Interpreter
+            ),
+            Normalized = normalize_elf_runpaths(
+                WithInterpreter,
+                SectionOffset,
+                SectionEntrySize,
+                SectionCount,
+                Runpath
+            ),
+            case Normalized =:= Binary of
+                true -> ok;
+                false -> file:write_file(Path, Normalized)
+            end;
+        <<16#7f, $E, $L, $F, _/binary>> ->
+            erlang:error({unsupported_elf_format, Path});
+        _ ->
+            ok
+    end.
+
+elf_layout(Binary) ->
+    <<16#7f, $E, $L, $F, 2, 1, _Ident:10/binary,
+      _Type:16/little-unsigned-integer,
+      _Machine:16/little-unsigned-integer,
+      _Version:32/little-unsigned-integer,
+      _Entry:64/little-unsigned-integer,
+      ProgramOffset:64/little-unsigned-integer,
+      SectionOffset:64/little-unsigned-integer,
+      _Flags:32/little-unsigned-integer,
+      _HeaderSize:16/little-unsigned-integer,
+      ProgramEntrySize:16/little-unsigned-integer,
+      ProgramCount:16/little-unsigned-integer,
+      SectionEntrySize:16/little-unsigned-integer,
+      SectionCount:16/little-unsigned-integer,
+      _SectionNames:16/little-unsigned-integer,
+      _/binary>> = Binary,
+    {ProgramOffset, SectionOffset, ProgramEntrySize, ProgramCount,
+     SectionEntrySize, SectionCount}.
+
+normalize_elf_interpreter(Binary, _Offset, _EntrySize, 0, _Interpreter) ->
+    Binary;
+normalize_elf_interpreter(Binary, Offset, EntrySize, Count, Interpreter) ->
+    Header = binary:part(Binary, Offset, EntrySize),
+    <<Type:32/little-unsigned-integer,
+      _Flags:32/little-unsigned-integer,
+      FileOffset:64/little-unsigned-integer,
+      _VirtualAddress:64/little-unsigned-integer,
+      _PhysicalAddress:64/little-unsigned-integer,
+      FileSize:64/little-unsigned-integer,
+      _/binary>> = Header,
+    Patched = case Type of
+        3 -> replace_c_string(Binary, FileOffset, FileSize, Interpreter);
+        _ -> Binary
+    end,
+    normalize_elf_interpreter(Patched, Offset + EntrySize, EntrySize, Count - 1, Interpreter).
+
+normalize_elf_runpaths(Binary, SectionOffset, SectionEntrySize, SectionCount, Runpath) ->
+    Sections = [
+        elf_section(Binary, SectionOffset, SectionEntrySize, Index)
+        || Index <- lists:seq(0, SectionCount - 1)
+    ],
+    lists:foldl(
+        fun(Section, Accumulator) ->
+            case maps:get(type, Section) of
+                6 -> normalize_dynamic_runpaths(Accumulator, Section, Sections, Runpath);
+                _ -> Accumulator
+            end
+        end,
+        Binary,
+        Sections
+    ).
+
+elf_section(Binary, SectionOffset, SectionEntrySize, Index) ->
+    Offset = SectionOffset + Index * SectionEntrySize,
+    Header = binary:part(Binary, Offset, SectionEntrySize),
+    <<_Name:32/little-unsigned-integer,
+      Type:32/little-unsigned-integer,
+      _Flags:64/little-unsigned-integer,
+      _Address:64/little-unsigned-integer,
+      FileOffset:64/little-unsigned-integer,
+      Size:64/little-unsigned-integer,
+      Link:32/little-unsigned-integer,
+      _Info:32/little-unsigned-integer,
+      _Alignment:64/little-unsigned-integer,
+      EntrySize:64/little-unsigned-integer,
+      _/binary>> = Header,
+    #{entry_size => EntrySize, link => Link, offset => FileOffset, size => Size, type => Type}.
+
+normalize_dynamic_runpaths(Binary, Dynamic, Sections, Runpath) ->
+    StringTable = lists:nth(maps:get(link, Dynamic) + 1, Sections),
+    normalize_dynamic_entries(
+        Binary,
+        maps:get(offset, Dynamic),
+        maps:get(size, Dynamic),
+        maps:get(entry_size, Dynamic),
+        maps:get(offset, StringTable),
+        Runpath
+    ).
+
+normalize_dynamic_entries(_Binary, _Offset, _Remaining, 0, _StringsOffset, _Runpath) ->
+    erlang:error(invalid_elf_dynamic_entry_size);
+normalize_dynamic_entries(Binary, _Offset, Remaining, EntrySize, _StringsOffset, _Runpath)
+        when Remaining < EntrySize ->
+    Binary;
+normalize_dynamic_entries(Binary, Offset, Remaining, EntrySize, StringsOffset, Runpath) ->
+    Entry = binary:part(Binary, Offset, EntrySize),
+    <<Tag:64/little-signed-integer, Value:64/little-unsigned-integer, _/binary>> = Entry,
+    Patched = case Tag of
+        15 -> replace_c_string(Binary, StringsOffset + Value, undefined, Runpath);
+        29 -> replace_c_string(Binary, StringsOffset + Value, undefined, Runpath);
+        _ -> Binary
+    end,
+    case Tag of
+        0 -> Patched;
+        _ -> normalize_dynamic_entries(
+            Patched,
+            Offset + EntrySize,
+            Remaining - EntrySize,
+            EntrySize,
+            StringsOffset,
+            Runpath
+        )
+    end.
+
+replace_c_string(Binary, Offset, Capacity0, Replacement) ->
+    Tail = binary:part(Binary, Offset, byte_size(Binary) - Offset),
+    [Existing | _] = binary:split(Tail, <<0>>),
+    ExistingCapacity = byte_size(Existing) + 1,
+    Capacity = case Capacity0 of
+        undefined -> ExistingCapacity;
+        _ -> Capacity0
+    end,
+    true = Capacity >= ExistingCapacity,
+    Required = byte_size(Replacement) + 1,
+    case Required =< Capacity of
+        true ->
+            Padding = binary:copy(<<0>>, Capacity - byte_size(Replacement)),
+            replace_bytes(Binary, Offset, Capacity, <<Replacement/binary, Padding/binary>>);
+        false ->
+            erlang:error({elf_runtime_path_too_long, binary_to_list(Existing), binary_to_list(Replacement)})
+    end.
+
+replace_bytes(Binary, Offset, Length, Replacement) ->
+    <<Prefix:Offset/binary, _Old:Length/binary, Suffix/binary>> = Binary,
+    <<Prefix/binary, Replacement/binary, Suffix/binary>>.
 
 prune_script_launchers(RuntimeRoot) ->
     walk(RuntimeRoot, fun prune_script_launcher/1).

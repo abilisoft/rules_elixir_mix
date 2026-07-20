@@ -1,6 +1,6 @@
 module(
     name = "rules_elixir_mix",
-    version = "0.1.0",
+    version = "0.2.0",
     bazel_compatibility = [">=9.2.0"],
 )
 

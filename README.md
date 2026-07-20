@@ -14,7 +14,7 @@ Hermetic, Mix-first Bazel rules for Elixir and Erlang/OTP applications,
 including Phoenix, LiveView, ExUnit, analysis, and releases.
 
 > [!IMPORTANT]
-> [`v0.1.0`](https://github.com/abilisoft/rules_elixir_mix/releases/tag/v0.1.0)
+> [`v0.2.0`](https://github.com/abilisoft/rules_elixir_mix/releases/tag/v0.2.0)
 > is available as a signed GitHub release but is intentionally not published to
 > the Bazel Central Registry yet. Pin its verified commit directly as shown in
 > [Getting started](docs/getting_started.md#1-pin-the-ruleset). Source builds

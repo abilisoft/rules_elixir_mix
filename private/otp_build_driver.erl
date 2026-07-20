@@ -9,11 +9,13 @@ main([ConfigPath]) ->
     Output = absolute(maps:get(output, Config)),
     ErlOutput = absolute(maps:get(erl_output, Config)),
     ErtsBinOutput = absolute(maps:get(erts_bin_output, Config)),
+    ExecErtsBinOutput = absolute(maps:get(exec_erts_bin_output, Config)),
     Work = Output ++ ".work",
     Source = filename:join(Work, "source"),
     ok = remove(Work),
     ok = remove(Output),
     ok = remove(ErtsBinOutput),
+    ok = remove(ExecErtsBinOutput),
     ok = ensure_directory(Source),
     copy_sources(maps:get(sources, Config), Source),
     ok = restore_source_directories(absolute(maps:get(source_directories, Config)), Source),
@@ -25,9 +27,10 @@ main([ConfigPath]) ->
     ),
     ExecutionRoot = absolute("."),
     Environment0 = maps:get(environment, Config),
-    Environment1 = maps:map(fun(_Key, Value) -> expand_path(Value) end, Environment0),
+    Environment1 = maps:map(fun(_Key, Value) -> expand_path(Value, ExecutionRoot) end, Environment0),
     Environment2 = compiler_flag_environment(Config, Environment1, ExecutionRoot),
-    Environment = crypto_link_environment(Config, Environment2, ExecutionRoot),
+    Environment3 = cross_compile_environment(Config, Environment2, ExecutionRoot),
+    Environment = crypto_link_environment(Config, Environment3, ExecutionRoot),
     PrefixMap = " " ++ shell_join([
         "-ffile-prefix-map=" ++ Work ++ "=.",
         "-fdebug-prefix-map=" ++ Work ++ "=."
@@ -42,6 +45,7 @@ main([ConfigPath]) ->
         "ERL_FLAGS" => false,
         "ERL_LIBS" => false,
         "ERL_ROOTDIR" => false,
+        "ERL_TOP" => Source,
         "ERL_ZFLAGS" => false,
         "HOME" => filename:join(Work, "home"),
         "LANG" => "C",
@@ -59,17 +63,29 @@ main([ConfigPath]) ->
     BootstrapErtsBin = absolute(maps:get(bootstrap_erts_bin, Config)),
     FipsRequired = maps:get(fips_required, Config, false),
     StaticCryptoNif = maps:get(static_crypto_nif, Config, false),
+    CrossCompiling = maps:get(cross_compiling, Config, false),
     CryptoOptions = crypto_options(maps:get(crypto_sdk, Config, none), FipsRequired, StaticCryptoNif),
     ConfigureOptions = ["--prefix=/"] ++ CryptoOptions ++ maps:get(configure_options, Config),
-    ok = run(
+    try run(
         maps:get(bash, Config),
         [filename:join(Source, "configure")] ++ ConfigureOptions,
         Source,
         BuildEnvironment
-    ),
+    ) of
+        ok -> ok
+    catch
+        Class:Reason:Stacktrace ->
+            ok = print_log_tail(filename:join([Source, "erts", "config.log"]), 1000),
+            erlang:raise(Class, Reason, Stacktrace)
+    end,
     ok = artifact_normalizer:scrub_erts_commandline_flags(Source),
     ok = artifact_normalizer:scrub_erts_build_metadata(Source),
-    MakeEnvironment0 = with_otp_bootstrap_path(Source, BuildEnvironment),
+    BootstrapLauncher = absolute(maps:get(bootstrap_launcher, Config)),
+    BootstrapTools = stage_bootstrap_tools(BootstrapLauncher, BootstrapErtsBin, Work),
+    MakeEnvironment0 = case CrossCompiling of
+        true -> with_external_bootstrap_path(BootstrapTools, BuildEnvironment);
+        false -> with_otp_bootstrap_path(Source, BuildEnvironment)
+    end,
     MakeEnvironment = MakeEnvironment0#{
         "ERLC_EMULATOR" => filename:join([Source, "bootstrap", "bin", "erl"])
     },
@@ -80,19 +96,43 @@ main([ConfigPath]) ->
         "BINDIR" => BootstrapErtsBin,
         "EMU" => "beam",
         "ERL_ROOTDIR" => absolute(maps:get(bootstrap_root, Config)),
-        "ERLC_EMULATOR" => BootstrapErlExec,
+        "ERLC_EMULATOR" => BootstrapLauncher,
         "PROGNAME" => "erl",
         "ROOTDIR" => absolute(maps:get(bootstrap_root, Config)),
+        "RULES_ELIXIR_MIX_BOOTSTRAP_ERLEXEC" => BootstrapErlExec,
+        "RULES_ELIXIR_MIX_BOOTSTRAP_ERTS_BIN" => BootstrapErtsBin,
+        "RULES_ELIXIR_MIX_BOOTSTRAP_ROOT" => absolute(maps:get(bootstrap_root, Config)),
+        "RULES_HERMETIC_EXECUTABLE" => BootstrapErlExec,
+        "RULES_HERMETIC_EXEC_ENV" => string:join([
+            "BINDIR=" ++ BootstrapErtsBin,
+            "EMU=beam",
+            "PROGNAME=erl",
+            "ROOTDIR=" ++ absolute(maps:get(bootstrap_root, Config)),
+            "RULES_ELIXIR_MIX_ERTS_PATH=" ++ BootstrapErtsBin
+        ], "\n"),
         "RULES_ELIXIR_MIX_ERTS_PATH" => BootstrapErtsBin
     },
+    true = filelib:is_file(filename:join(BootstrapErtsBin, "beam.smp")),
+    ok = run(
+        BootstrapLauncher,
+        ["-noshell", "-eval", "halt()."],
+        Work,
+        ExternalBootstrapEnvironment
+    ),
     Jobs = integer_to_list(maps:get(jobs, Config)),
     MakeShell = "SHELL=" ++ maps:get("SHELL", MakeEnvironment),
     MakeDeterministic = "ERL_DETERMINISTIC=yes",
+    MakePath = "PATH=" ++ maps:get("PATH", MakeEnvironment0),
+    MakeTarget = "TARGET=" ++ otp_target(Source),
     %% OTP's generated Makefiles assign ARFLAGS themselves, so the action's
     %% environment alone cannot carry the C/C++ toolchain's deterministic
     %% archive policy. A command-line assignment has Make's required priority.
     MakeArFlags = "ARFLAGS=" ++ maps:get("ARFLAGS", MakeEnvironment),
-    MakeVariables = [MakeShell, MakeDeterministic, MakeArFlags],
+    MakeVariables = [MakeShell, MakeDeterministic, MakeArFlags, MakePath, MakeTarget],
+    FinalMakeVariables = case CrossCompiling of
+        true -> MakeVariables ++ ["BOOT_PREFIX="];
+        false -> MakeVariables
+    end,
     MakeOptions = maps:get(make_options, Config),
     ok = run(
         maps:get(make, Config),
@@ -100,6 +140,21 @@ main([ConfigPath]) ->
         Source,
         ExternalBootstrapEnvironment
     ),
+    %% OTP's static-NIF emulator graph can reach lib/crypto's archive target
+    %% through two parallel recursive Make branches. Build that archive once
+    %% at the boundary before the parallel emulator traversal; otherwise both
+    %% archivers may write crypto.a concurrently.
+    case StaticCryptoNif of
+        true ->
+            ok = run(
+                maps:get(make, Config),
+                MakeVariables ++ MakeOptions ++ ["-C", "lib/crypto", "static_lib"],
+                Source,
+                ExternalBootstrapEnvironment
+            );
+        false ->
+            ok
+    end,
     PgoMakeOptions = case otp_pgo_enabled(Source) of
         true ->
             %% OTP's PGO graph replaces the emulator used by bootstrap/bin/erl.
@@ -131,26 +186,30 @@ main([ConfigPath]) ->
         Source,
         ExternalBootstrapEnvironment
     ),
+    RuntimeBuildEnvironment = case CrossCompiling of
+        true -> ExternalBootstrapEnvironment;
+        false -> MakeEnvironment
+    end,
     %% OTP documents all_bootstraps as the complete compiler bootstrap
-    %% boundary. The final emulator and primary launcher now exist, so its
-    %% secondary and tertiary applications can use the source runtime safely.
+    %% boundary. Cross builds continue using the declared build-machine OTP;
+    %% target BEAM executables cannot run on that execution platform.
     ok = run(
         maps:get(make, Config),
         MakeVariables ++ ["-j" ++ Jobs] ++ PgoMakeOptions ++ MakeOptions ++ ["all_bootstraps"],
         Source,
-        MakeEnvironment
+        RuntimeBuildEnvironment
     ),
     ok = run(
         maps:get(make, Config),
-        MakeVariables ++ ["-j" ++ Jobs] ++ PgoMakeOptions ++ MakeOptions,
+        FinalMakeVariables ++ ["-j" ++ Jobs] ++ PgoMakeOptions ++ MakeOptions,
         Source,
-        MakeEnvironment
+        RuntimeBuildEnvironment
     ),
     ok = run(
         maps:get(make, Config),
-        MakeVariables ++ PgoMakeOptions ++ MakeOptions ++ ["install", "DESTDIR=" ++ Output],
+        FinalMakeVariables ++ PgoMakeOptions ++ MakeOptions ++ ["install", "DESTDIR=" ++ Output],
         Source,
-        MakeEnvironment
+        RuntimeBuildEnvironment
     ),
     RuntimeRoot = filename:join([Output, "lib", "erlang"]),
     StableSource = "/rules_elixir_mix/sources/otp-" ++ maps:get(version, Config),
@@ -160,7 +219,6 @@ main([ConfigPath]) ->
     %% consumers invoke the separately declared native erlexec artifact.
     ok = remove(filename:join(Output, "bin")),
     ok = artifact_normalizer:normalize_tree(RuntimeRoot, Work, StableSource),
-    ok = artifact_normalizer:assert_absent(RuntimeRoot, [Work, ExecutionRoot]),
     {ok, StartErlData} = file:read_file(filename:join([RuntimeRoot, "releases", "start_erl.data"])),
     [ErtsVersion, OtpRelease | _] = string:tokens(binary_to_list(StartErlData), " \t\r\n"),
     {ok, InstalledOtpVersion0} = file:read_file(
@@ -171,22 +229,58 @@ main([ConfigPath]) ->
     InstalledErtsBin = filename:join([RuntimeRoot, "erts-" ++ ErtsVersion, "bin"]),
     InstalledErlExec = filename:join(InstalledErtsBin, "erlexec"),
     true = filelib:is_file(InstalledErlExec),
-    ok = link_erts_bin(InstalledErtsBin, ErtsBinOutput, Output),
-    VerificationEnvironment0 = activate_crypto(Config, Work, MakeEnvironment),
-    VerificationEnvironment = runtime_environment(RuntimeRoot, ErtsBinOutput, VerificationEnvironment0),
-    ok = verify_crypto(
-        FipsRequired,
-        StaticCryptoNif,
-        filename:join(ErtsBinOutput, "erlexec"),
-        Work,
-        VerificationEnvironment
+    case CrossCompiling of
+        true -> ok;
+        false ->
+            VerificationEnvironment0 = activate_crypto(Config, Work, MakeEnvironment),
+            VerificationEnvironment = runtime_environment(RuntimeRoot, InstalledErtsBin, VerificationEnvironment0),
+            ok = verify_crypto(
+                FipsRequired,
+                StaticCryptoNif,
+                InstalledErlExec,
+                Work,
+                VerificationEnvironment
+            )
+    end,
+    ok = prune_loadable_crypto_nif(RuntimeRoot, StaticCryptoNif),
+    case maps:get(crypto_execution_wrapper, Config, none) of
+        none -> ok;
+        _ -> artifact_normalizer:normalize_elf_runtime(
+            RuntimeRoot,
+            "/proc/self/cwd/lib/ld-musl.so.1",
+            "/proc/self/cwd/lib"
+        )
+    end,
+    ok = artifact_normalizer:assert_absent(RuntimeRoot, [Work, ExecutionRoot]),
+    ok = link_erts_bin(
+        InstalledErtsBin,
+        ErtsBinOutput,
+        Output,
+        maps:get(crypto_execution_wrapper, Config, none),
+        ExecutionRoot
+    ),
+    ok = link_erts_bin(
+        InstalledErtsBin,
+        ExecErtsBinOutput,
+        Output,
+        maps:get(crypto_execution_exec_wrapper, Config, none),
+        ExecutionRoot
     ),
     ok = ensure_parent(ErlOutput),
     ok = remove(ErlOutput),
-    RelativeErl = filename:join([filename:basename(ErtsBinOutput), "erlexec"]),
-    ok = file:make_symlink(RelativeErl, ErlOutput),
+    ok = stage_erl_launcher(Config, ExecutionRoot, ErtsBinOutput, ErlOutput),
     ok = remove(Work),
     ok.
+
+stage_erl_launcher(Config, ExecutionRoot, ErtsBinOutput, ErlOutput) ->
+    case maps:get(crypto_execution_wrapper, Config, none) of
+        none ->
+            RelativeErl = filename:join([filename:basename(ErtsBinOutput), "erlexec"]),
+            file:make_symlink(RelativeErl, ErlOutput);
+        Wrapper0 ->
+            Wrapper = absolute_build_path(Wrapper0, ExecutionRoot),
+            copy_executable(Wrapper, ErlOutput)
+    end.
 
 with_otp_bootstrap_path(Source, Environment) ->
     Target = otp_target(Source),
@@ -196,6 +290,22 @@ with_otp_bootstrap_path(Source, Environment) ->
     Environment#{
         "PATH" => string:join([BootstrapBin, PrimaryBootstrapBin, Existing], ":")
     }.
+
+stage_bootstrap_tools(BootstrapLauncher, BootstrapErtsBin, Work) ->
+    Directory = filename:join(Work, "bootstrap_tools"),
+    ok = ensure_directory(Directory),
+    ok = file:make_symlink(BootstrapLauncher, filename:join(Directory, "erl")),
+    lists:foreach(fun(Name) ->
+        ok = file:make_symlink(
+            filename:join(BootstrapErtsBin, Name),
+            filename:join(Directory, Name)
+        )
+    end, ["erlc", "escript"]),
+    Directory.
+
+with_external_bootstrap_path(BootstrapTools, Environment) ->
+    Existing = maps:get("PATH", Environment, ""),
+    Environment#{"PATH" => string:join([BootstrapTools, Existing], ":")}.
 
 otp_target(Source) ->
     GeneratedMakefiles = lists:sort([
@@ -217,27 +327,49 @@ otp_pgo_enabled(Source) ->
 absolute(Path) ->
     filename:absname(Path).
 
-expand_path({path, Path}) ->
-    absolute(Path);
-expand_path({path_list, Paths}) ->
-    string:join([absolute(Path) || Path <- Paths], ":");
-expand_path(Value) ->
+expand_path({path, Path}, ExecutionRoot) ->
+    absolute_build_path(Path, ExecutionRoot);
+expand_path({path_list, Paths}, ExecutionRoot) ->
+    string:join([absolute_build_path(Path, ExecutionRoot) || Path <- Paths], ":");
+expand_path(Value, _ExecutionRoot) ->
     Value.
 
 compiler_flag_environment(Config, Environment, ExecutionRoot) ->
+    CFlags = normalize_flags(maps:get(cflags, Config, []), ExecutionRoot),
+    CxxFlags = normalize_flags(maps:get(cxxflags, Config, []), ExecutionRoot),
     DynamicFlags = shell_join(normalize_flags(maps:get(ded_ldflags, Config, []), ExecutionRoot)),
     DynamicLibraries = shell_join(normalize_flags(maps:get(ded_libs, Config, []), ExecutionRoot)),
     Environment#{
         "ARFLAGS" => shell_join(normalize_flags(maps:get(arflags, Config, []), ExecutionRoot)),
-        "CFLAGS" => shell_join(normalize_flags(maps:get(cflags, Config, []), ExecutionRoot)),
-        "CXXFLAGS" => shell_join(normalize_flags(maps:get(cxxflags, Config, []), ExecutionRoot)),
-        "DED_LD" => absolute(maps:get(ded_ld, Config)),
+        "CFLAGS" => shell_join(CFlags),
+        "CPP" => shell_join([maps:get("CC", Environment), "-E" | CFlags]),
+        "CXXFLAGS" => shell_join(CxxFlags),
+        "DED_LD" => absolute_build_path(maps:get(ded_ld, Config), ExecutionRoot),
         "DED_LD_FLAG_RUNTIME_LIBRARY_PATH" => maps:get(ded_ld_runtime_library_path, Config),
         "DED_LIBS" => DynamicLibraries,
         "DED_LDFLAGS" => DynamicFlags,
         "DED_LDFLAGS_CONFTEST" => DynamicFlags,
         "LDFLAGS" => shell_join(normalize_flags(maps:get(ldflags, Config, []), ExecutionRoot))
     }.
+
+cross_compile_environment(Config, Environment, ExecutionRoot) ->
+    case maps:get(cross_compiling, Config, false) of
+        false -> Environment;
+        true ->
+            Flags = normalize_flags(maps:get(cflags, Config, []), ExecutionRoot),
+            Sysroots = lists:usort([
+                lists:nthtail(length("--sysroot="), Flag)
+                || Flag <- Flags,
+                   lists:prefix("--sysroot=", Flag)
+            ]),
+            case Sysroots of
+                [Sysroot] -> Environment#{
+                    "erl_xcomp_isysroot" => Sysroot,
+                    "erl_xcomp_sysroot" => Sysroot
+                };
+                _ -> erlang:error({cross_compile_requires_one_declared_sysroot, Sysroots})
+            end
+    end.
 
 shell_join(Values) ->
     string:join([shell_quote(Value) || Value <- Values], " ").
@@ -271,7 +403,17 @@ normalize_flags([Flag | Rest], ExecutionRoot) ->
     [normalize_flag(Flag, ExecutionRoot) | normalize_flags(Rest, ExecutionRoot)].
 
 normalize_flag(Flag, ExecutionRoot) ->
-    Prefixes = ["--sysroot=", "-isystem", "-I", "-L", "-B"],
+    Prefixes = [
+        "--sysroot=",
+        "-resource-dir=",
+        "-fuse-ld=",
+        "-Wl,--dynamic-linker=",
+        "-Wl,-rpath,",
+        "-isystem",
+        "-I",
+        "-L",
+        "-B"
+    ],
     normalize_prefixed_flag(Flag, Prefixes, ExecutionRoot).
 
 normalize_prefixed_flag(Flag, [], _ExecutionRoot) ->
@@ -286,9 +428,14 @@ normalize_prefixed_flag(Flag, [Prefix | Rest], ExecutionRoot) ->
     end.
 
 absolute_build_path(Path, ExecutionRoot) ->
-    case filename:pathtype(Path) of
-        absolute -> Path;
-        _ -> filename:join(ExecutionRoot, Path)
+    Marker = "/proc/self/cwd/",
+    case lists:prefix(Marker, Path) of
+        true -> filename:join(ExecutionRoot, lists:nthtail(length(Marker), Path));
+        false ->
+            case filename:pathtype(Path) of
+                absolute -> Path;
+                _ -> filename:join(ExecutionRoot, Path)
+            end
     end.
 
 normalize_interpreters(Path, Bash, Perl, Escript) ->
@@ -380,6 +527,25 @@ option(true, Value) -> [Value];
 option(false, _Value) -> [].
 
 activate_crypto(Config, Work, Environment) ->
+    case maps:get(crypto_prepared_state, Config, none) of
+        PreparedState when PreparedState =/= none ->
+            Sysroot = absolute(maps:get(crypto_sdk, Config)),
+            ActivationRoot = absolute(PreparedState),
+            Expand = fun(Value) ->
+                replace_template(Value, Sysroot, ActivationRoot)
+            end,
+            RuntimeEnvironment = maps:map(
+                fun(_Key, Value) -> Expand(Value) end,
+                maps:get(crypto_runtime_environment, Config, #{})
+            ),
+            maps:merge(
+                maps:without(["OPENSSL_CONF", "OPENSSL_MODULES", "FIPS_MODULE_CONF"], Environment),
+                RuntimeEnvironment
+            );
+        none -> activate_crypto_legacy(Config, Work, Environment)
+    end.
+
+activate_crypto_legacy(Config, Work, Environment) ->
     case maps:get(crypto_activation_tool, Config, none) of
         none ->
             IsolationRoot = filename:join(Work, "crypto_isolation"),
@@ -436,7 +602,7 @@ runtime_environment(Root, ErtsBin, Environment) ->
         "ROOTDIR" => absolute(Root)
     }.
 
-link_erts_bin(Source, Destination, InstallRoot) ->
+link_erts_bin(Source, Destination, InstallRoot, Wrapper0, ExecutionRoot) ->
     ok = ensure_directory(Destination),
     {ok, Children} = file:list_dir(Source),
     RelativeSource = filename:join([
@@ -447,15 +613,44 @@ link_erts_bin(Source, Destination, InstallRoot) ->
         filename:basename(filename:dirname(Source)),
         "bin"
     ]),
-    lists:foreach(
-        fun(Child) ->
-            ok = file:make_symlink(
-                filename:join(RelativeSource, Child),
-                filename:join(Destination, Child)
+    case Wrapper0 of
+        none ->
+            lists:foreach(
+                fun(Child) ->
+                    ok = file:make_symlink(
+                        filename:join(RelativeSource, Child),
+                        filename:join(Destination, Child)
+                    )
+                end,
+                Children
+            );
+        Wrapper0 ->
+            Wrapper = absolute_build_path(Wrapper0, ExecutionRoot),
+            Launcher = filename:join(Destination, ".runtime-launch"),
+            ok = copy_executable(Wrapper, Launcher),
+            lists:foreach(
+                fun(Child) ->
+                    ok = file:make_symlink(
+                        filename:join(RelativeSource, Child),
+                        filename:join(Destination, ".real-" ++ Child)
+                    ),
+                    %% OTP deliberately changes BEAM's argv[0] to the calling
+                    %% frontend (for example erlc via ESCRIPT_NAME). Give each
+                    %% launcher name its own executable directory entry so the
+                    %% static wrapper can dispatch by /proc/self/exe without
+                    %% interpreting that application-visible argv[0]. Hard
+                    %% links keep the action tree and CAS content deduplicated.
+                    ok = file:make_link(Launcher, filename:join(Destination, Child))
+                end,
+                Children
             )
-        end,
-        Children
-    ).
+    end.
+
+copy_executable(Source, Destination) ->
+    {ok, SourceInfo} = file:read_file_info(Source),
+    {ok, _Bytes} = file:copy(Source, Destination),
+    {ok, DestinationInfo} = file:read_file_info(Destination),
+    file:write_file_info(Destination, DestinationInfo#file_info{mode = SourceInfo#file_info.mode}).
 
 verify_crypto(false, false, _InstalledErl, _Work, _Environment) ->
     ok;
@@ -483,6 +678,16 @@ verify_crypto(FipsRequired, true, InstalledErl, Work, Environment) ->
         Work,
         Environment
     ).
+
+prune_loadable_crypto_nif(_RuntimeRoot, false) ->
+    ok;
+prune_loadable_crypto_nif(RuntimeRoot, true) ->
+    %% OTP installs crypto.so even when the same NIF is linked statically into
+    %% BEAM. Verify the static runtime first, then omit the redundant loadable
+    %% copy so the delivered tree cannot fall back to it.
+    Pattern = filename:join([RuntimeRoot, "lib", "crypto-*", "priv", "lib", "crypto.so"]),
+    lists:foreach(fun(Path) -> ok = file:delete(Path) end, filelib:wildcard(Pattern)),
+    ok.
 
 option_expression(true, Value) -> Value;
 option_expression(false, _Value) -> "".
@@ -579,4 +784,18 @@ remove(Path) ->
         {ok, _Info} -> file:delete(Path);
         {error, enoent} -> ok;
         Error -> Error
+    end.
+
+print_log_tail(Path, Limit) ->
+    case file:read_file(Path) of
+        {ok, Contents} ->
+            Lines = binary:split(Contents, <<"\n">>, [global]),
+            Offset = max(0, length(Lines) - Limit),
+            ok = io:put_chars(["\n--- ", Path, " (tail) ---\n"]),
+            ok = io:put_chars(lists:join(<<"\n">>, lists:nthtail(Offset, Lines))),
+            ok = io:put_chars("\n--- end config.log ---\n");
+        {error, enoent} ->
+            ok;
+        {error, Error} ->
+            erlang:error({config_log_read_failed, Path, Error})
     end.

@@ -1,6 +1,6 @@
 """Explicit local-only Mix workflows for servers, reloaders, and generators."""
 
-load("//private:beam_info.bzl", "ErlangAppInfo", "crypto_exec_inputs", "crypto_exec_tools", "crypto_runtime_files", "erl_env_flags", "fips_erl_args", "otp_runtime_env", "path_join", "runtime_path_erl_args", "test_erl_launcher")
+load("//private:beam_info.bzl", "ErlangAppInfo", "crypto_runtime_files", "erl_env_flags", "execution_erlexec", "fips_erl_args", "otp_runtime_env", "path_join", "prepare_crypto_runtime", "runtime_path_erl_args", "test_erl_launcher")
 load("//private:mix_execution.bzl", "MIX_EVAL", "validate_user_env")
 load("//private:mix_info.bzl", "MixProjectInfo")
 
@@ -105,11 +105,12 @@ def _local_stage_manifest(ctx, app, dependencies, project_root):
 
 def _compile_local_driver(ctx, otp):
     driver = ctx.actions.declare_file(ctx.label.name + "_local_driver/mix_local_driver.beam")
+    activation = prepare_crypto_runtime(ctx, otp, ctx.label.name + "_driver_crypto_state")
     args = ctx.actions.args()
     args.add_all([
         "-noshell",
         "+fnu",
-    ] + fips_erl_args(otp) + [
+    ] + fips_erl_args(otp, activate = False) + [
         "-eval",
         "[S,O]=init:get_plain_arguments(),ok=filelib:ensure_dir(filename:join(O,\".keep\")),case compile:file(S,[deterministic,report_errors,report_warnings,{outdir,O}]) of {ok,mix_local_driver}->ok;{ok,mix_local_driver,_}->ok;Error->erlang:error({driver_compile_failed,Error}) end,halt().",
         "-extra",
@@ -117,6 +118,7 @@ def _compile_local_driver(ctx, otp):
         driver.dirname,
     ])
     environment = otp_runtime_env(otp)
+    environment.update(activation.environment)
     environment.update({
         "HOME": driver.dirname + "/.state/home",
         "LANG": "C",
@@ -126,13 +128,12 @@ def _compile_local_driver(ctx, otp):
         "TZ": "UTC",
     })
     ctx.actions.run(
-        executable = otp.erlexec,
+        executable = execution_erlexec(otp),
         arguments = [args],
         inputs = depset(
             direct = [ctx.file._driver],
-            transitive = [otp.runtime_files, crypto_exec_inputs(otp)],
+            transitive = [otp.runtime_files, activation.files],
         ),
-        tools = crypto_exec_tools(otp),
         outputs = [driver],
         env = environment,
         execution_requirements = {"block-network": "1"},
@@ -155,6 +156,12 @@ def _local_preload_expression(mix_exs):
 
 def _mix_local_impl(ctx):
     toolchain = ctx.toolchains["//:toolchain_type"]
+    activation = prepare_crypto_runtime(
+        ctx,
+        toolchain.otpinfo,
+        ctx.label.name + "_crypto_state",
+        runfiles = True,
+    )
     project = ctx.attr.lib[MixProjectInfo]
     app = ctx.attr.lib[ErlangAppInfo]
     dependencies = app.compile_deps.to_list()
@@ -169,7 +176,7 @@ def _mix_local_impl(ctx):
         _local_bootstrap_expression(ctx, manifest),
         "-noshell",
         "+fnu",
-    ] + fips_erl_args(toolchain.otpinfo, runfiles = True) + [
+    ] + fips_erl_args(toolchain.otpinfo, runfiles = True, activate = False) + [
         "-pa",
         driver_runfiles_dir,
         "-eval",
@@ -224,6 +231,7 @@ def _mix_local_impl(ctx):
 
     validate_user_env(ctx.attr.env)
     environment = otp_runtime_env(toolchain.otpinfo, runfiles = True)
+    environment.update(activation.environment)
     environment.update(ctx.attr.env)
     environment.update({
         "ERL_AFLAGS": erl_env_flags(args),
@@ -253,6 +261,7 @@ def _mix_local_impl(ctx):
         transitive_files = depset(transitive = [
             toolchain.runtime_files,
             crypto_runtime_files(toolchain.otpinfo),
+            activation.files,
         ]),
     ).merge(ctx.attr.lib[DefaultInfo].default_runfiles)
     for dependency in dependencies:

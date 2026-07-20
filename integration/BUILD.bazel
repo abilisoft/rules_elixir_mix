@@ -122,6 +122,8 @@ platform(
         "@platforms//os:linux",
     ],
     exec_properties = {
+        "Arch": "amd64",
+        "OSFamily": "linux",
         "container-image": "docker://elixir@sha256:d430c98a3ba7c97bdfe688e29e8c4378966519c79af04963cc9276f7f2013ecc",
     },
 )
@@ -141,6 +143,8 @@ platform(
         "@platforms//os:linux",
     ],
     exec_properties = {
+        "Arch": "arm64",
+        "OSFamily": "linux",
         "container-image": "docker://elixir@sha256:d430c98a3ba7c97bdfe688e29e8c4378966519c79af04963cc9276f7f2013ecc",
     },
 )

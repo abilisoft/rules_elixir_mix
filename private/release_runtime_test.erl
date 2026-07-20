@@ -60,19 +60,20 @@ main([ReleaseRoot0, ReleaseName, AppName, CryptoActivation0, FipsRequired0,
         "io:format(\"release-runtime-ok ~~tp~n\",[~tp]),halt().",
         [FipsEvaluation, Protocols, App, App]
     )),
+    RuntimeSysConfig = case CryptoActivation of
+        true -> "{activation_root}/sys";
+        false -> SysConfig
+    end,
     Arguments = [
-        "+fnu",
+        "+fnu"
+    ] ++ fips_arguments(FipsRequired) ++ [
         "-boot", StartBoot,
         "-boot_var", "RELEASE_LIB", filename:join(ReleaseRoot, "lib"),
         "-mode", "embedded",
-        "-config", SysConfig,
+        "-config", RuntimeSysConfig,
         "-noshell",
         "-eval", Evaluation
     ],
-    CryptoEnvironment = case CryptoActivation of
-        true -> [{"RULES_ELIXIR_MIX_CRYPTO_STATE", filename:join(RuntimeState, "crypto")}];
-        false -> [{"RULES_ELIXIR_MIX_CRYPTO_STATE", false}]
-    end,
     AmbientCryptoEnvironment = [
         {Key, false}
         || Key <- lists:usort([
@@ -83,7 +84,7 @@ main([ReleaseRoot0, ReleaseName, AppName, CryptoActivation0, FipsRequired0,
             | CryptoEnvironmentKeys
         ])
     ],
-    Environment = AmbientCryptoEnvironment ++ CryptoEnvironment ++ [
+    Environment = AmbientCryptoEnvironment ++ [
         {"BINDIR", ErtsBin},
         {"EMU", "beam"},
         {"ERL_AFLAGS", false},
@@ -102,12 +103,130 @@ main([ReleaseRoot0, ReleaseName, AppName, CryptoActivation0, FipsRequired0,
         {"ROOTDIR", ReleaseRoot},
         {"TZ", "UTC"}
     ],
-    Output = run(ErlExec, Arguments, Environment, ReleaseRoot),
+    Output = case CryptoActivation of
+        true ->
+            run_packaged_release(
+                FipsRequired,
+                ReleaseRoot,
+                ReleaseName,
+                ErlExec,
+                Arguments,
+                Environment,
+                RuntimeState
+            );
+        false ->
+            run(ErlExec, Arguments, Environment, ReleaseRoot)
+    end,
     case binary:match(Output, <<"release-runtime-ok">>) of
         nomatch -> erlang:error({release_did_not_confirm_startup, Output});
         _ -> io:put_chars(Output)
     end,
     ok.
+
+fips_arguments(true) -> ["-crypto", "fips_mode", "true"];
+fips_arguments(false) -> [].
+
+run_packaged_release(
+    FipsRequired,
+    ReleaseRoot,
+    ReleaseName,
+    ErlExec,
+    RuntimeArguments,
+    Environment,
+    RuntimeState
+) ->
+    State = filename:join(RuntimeState, "crypto"),
+    ok = ensure_directory(State),
+    SdkRoot = filename:join([ReleaseRoot, ".rules_elixir_mix", "crypto_sdk"]),
+    ConfigPath = filename:join([ReleaseRoot, ".rules_elixir_mix", "crypto_activation.config"]),
+    {ok, [Config]} = file:consult(ConfigPath),
+    Expand = fun(Value) ->
+        WithSdk = string:replace(Value, "{sysroot}", SdkRoot, all),
+        lists:flatten(string:replace(WithSdk, "{activation_root}", State, all))
+    end,
+    Tool = filename:join(SdkRoot, maps:get(activation_tool, Config)),
+    true = filelib:is_regular(Tool),
+    [_ | _] = [Expand(Value) || Value <- maps:get(activation_args, Config)],
+    [_ | _] = [
+        {Key, Expand(Value)} || {Key, Value} <- maps:get(runtime_environment, Config)
+    ],
+    Launcher = filename:join([ReleaseRoot, "bin", ReleaseName]),
+    true = filelib:is_regular(Launcher),
+    LaunchConfigPath = Launcher ++ ".rules_fips.json",
+    {ok, LaunchJson} = file:read_file(LaunchConfigPath),
+    #{<<"schema">> := 1, <<"command">> := <<"start">>, <<"arguments">> := LaunchArguments} =
+        LaunchConfig = json:decode(LaunchJson),
+    case FipsRequired of
+        true ->
+            true = contains_sequence(LaunchArguments, [<<"-crypto">>, <<"fips_mode">>, <<"true">>]);
+        false ->
+            ok
+    end,
+    NativeRoot = filename:join(State, "native-release"),
+    NativeLauncher = filename:join([NativeRoot, "bin", ReleaseName]),
+    ok = ensure_directory(filename:dirname(NativeLauncher)),
+    {ok, _} = file:copy(Launcher, NativeLauncher),
+    ok = file:change_mode(NativeLauncher, 8#755),
+    ReleaseRootBinary = unicode:characters_to_binary(ReleaseRoot),
+    LaunchEnvironment = maps:map(
+        fun(_Key, Value) ->
+            binary:replace(Value, <<"{release_root}">>, ReleaseRootBinary, [global])
+        end,
+        maps:get(<<"environment">>, LaunchConfig)
+    ),
+    LaunchRuntimeEnvironment = maps:map(
+        fun(_Key, Value) ->
+            binary:replace(Value, <<"{release_root}">>, ReleaseRootBinary, [global])
+        end,
+        maps:get(<<"runtime_environment">>, LaunchConfig)
+    ),
+    LaunchWritableCopies = [
+        Copy#{
+            <<"source">> => binary:replace(
+                maps:get(<<"source">>, Copy),
+                <<"{release_root}">>,
+                ReleaseRootBinary,
+                [global]
+            )
+        }
+        || Copy <- maps:get(<<"writable_copies">>, LaunchConfig)
+    ],
+    RuntimeProgram = case filelib:is_regular(
+        filename:join(filename:dirname(ErlExec), ".real-" ++ filename:basename(ErlExec))
+    ) of
+        true -> filename:join(filename:dirname(ErlExec), ".real-" ++ filename:basename(ErlExec));
+        false -> ErlExec
+    end,
+    TestLaunchConfig = LaunchConfig#{
+        <<"sdk_root">> => unicode:characters_to_binary(SdkRoot),
+        <<"program">> => unicode:characters_to_binary(RuntimeProgram),
+        <<"arguments">> => [unicode:characters_to_binary(Value) || Value <- RuntimeArguments],
+        <<"environment">> => LaunchEnvironment,
+        <<"runtime_environment">> => LaunchRuntimeEnvironment,
+        <<"writable_copies">> => LaunchWritableCopies
+    },
+    ok = file:write_file(
+        NativeLauncher ++ ".rules_fips.json",
+        json:encode(TestLaunchConfig)
+    ),
+    run(
+        NativeLauncher,
+        ["start"],
+        lists:keydelete("RULES_ELIXIR_MIX_CRYPTO_STATE", 1, Environment) ++
+            [{"RULES_ELIXIR_MIX_CRYPTO_STATE", State}],
+        ReleaseRoot
+    ).
+
+contains_sequence(Values, Sequence) ->
+    contains_sequence(Values, Sequence, length(Sequence)).
+
+contains_sequence(Values, Sequence, Length) when length(Values) >= Length ->
+    case lists:sublist(Values, Length) of
+        Sequence -> true;
+        _ -> contains_sequence(tl(Values), Sequence, Length)
+    end;
+contains_sequence(_Values, _Sequence, _Length) ->
+    false.
 
 pairs([]) ->
     [];

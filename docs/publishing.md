@@ -20,14 +20,15 @@ toolchain and platform closure.
 
 ## Current publication state
 
-- [`v0.1.0`](https://github.com/abilisoft/rules_elixir_mix/releases/tag/v0.1.0)
-  is a signed GitHub release whose verified target commit is
-  `ea6194a031302ee7a1a40539cd78f3f280d3bfd3`.
+- [`v0.2.0`](https://github.com/abilisoft/rules_elixir_mix/releases/tag/v0.2.0)
+  is the current signed GitHub release. Resolve and verify its peeled commit as
+  shown in [Getting started](getting_started.md#1-pin-the-ruleset).
 - The module is not published to BCR. Consumers should use the direct commit
   override in [Getting started](getting_started.md#1-pin-the-ruleset).
 - No official OTP or Elixir runtime archives are published. The rules accept
-  producer-owned, checksum-pinned archives, while the real crypto-backed
-  producer matrix remains pending.
+  producer-owned, checksum-pinned archives. The source-build consumer path is
+  proven with the normalized `rules_fips` SDK on AMD64 and ARM64, but publishing
+  reusable runtime archives remains a separate producer decision.
 
 These are independent gates. Deferring BCR publication or official runtime
 archives does not prevent testing the signed ruleset through an exact commit.
@@ -50,8 +51,8 @@ For each version:
    validation and review.
 
 ```sh
-git tag -s v0.1.0 -m "rules_elixir_mix v0.1.0"
-git push origin v0.1.0
+git tag -s v0.2.0 -m "rules_elixir_mix v0.2.0"
+git push origin v0.2.0
 ```
 
 The workflow rejects lightweight tags, unverified tag signatures, tags outside
@@ -82,15 +83,16 @@ following:
 - FIPS/static-link tests when `fips = "required"`;
 - producer-owned backend provenance and policy tests.
 
-The GitHub matrix uses native Ubuntu 24.04 runners for both architectures; BCR
-uses native Debian 13 workers. ARM64 is not emulated, and an x86-64 success does
-not stand in for the ARM64 gate.
+The source-build matrix uses digest-pinned BuildBuddy execution platforms for
+both architectures. AMD64-only bootstrap actions execute on AMD64; target OTP,
+Elixir, Mix release, and FIPS runtime actions execute on the matching native
+AMD64 or ARM64 worker. An AMD64 success does not stand in for the ARM64 gate.
 
-Do not publish the current no-crypto source-integration runtime as a general
-OTP/Elixir prebuilt. It intentionally configures OTP with `--without-ssl` to
-prove the generic source path and is not a Phoenix/TLS runtime. Official
-archives remain blocked until a real hermetic crypto SDK supplies the complete
-closure and the archive/consume/boot matrix passes.
+The checked-in source integration is a proof target, not a published runtime
+archive. It builds pristine OTP and Elixir against a real normalized crypto SDK
+and boots both the VM and assembled release on each architecture. An official
+archive still requires immutable hosting plus the archive/consume/boot and
+reproducibility gates below.
 
 The archive metadata gives the exact `otp_strip_prefix`, `erlexec`,
 `otp_version_marker`, `elixir_strip_prefix`, `elixir_home_marker`,

@@ -34,8 +34,6 @@ jobs:
             runner: ubuntu-24.04-arm
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
-    env:
-      BAZEL_ARCH_REMOTE_FLAGS: ${{ matrix.arch == 'arm64' && '--remote_executor=' || '' }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -53,7 +51,6 @@ jobs:
 
           bazel test
           ${BAZEL_REMOTE_FALLBACK}
-          ${BAZEL_ARCH_REMOTE_FLAGS}
           --remote_header=x-buildbuddy-api-key="${BUILDBUDDY_ORG_API_KEY}"
           //:buildifier_test
       - name: Analyze public rule surface
@@ -63,7 +60,6 @@ jobs:
 
           bazel build --nobuild
           ${BAZEL_REMOTE_FALLBACK}
-          ${BAZEL_ARCH_REMOTE_FLAGS}
           --remote_header=x-buildbuddy-api-key="${BUILDBUDDY_ORG_API_KEY}"
           //test:analysis_fixture
           //test:analysis_test_lib
@@ -97,7 +93,6 @@ jobs:
 
           bazel build --nobuild
           ${BAZEL_REMOTE_FALLBACK}
-          ${BAZEL_ARCH_REMOTE_FLAGS}
           --remote_header=x-buildbuddy-api-key="${BUILDBUDDY_ORG_API_KEY}"
           --extra_toolchains=//test:fips_otp_toolchain,//test:fips_toolchain
           //test:fips_analysis_fixture
@@ -118,7 +113,6 @@ jobs:
     container:
       image: elixir@sha256:d430c98a3ba7c97bdfe688e29e8c4378966519c79af04963cc9276f7f2013ecc
     env:
-      BAZEL_ARCH_REMOTE_FLAGS: ${{ matrix.arch == 'arm64' && '--remote_executor=' || '' }}
       BAZEL_PLATFORM_FLAGS: --platforms=//:ci_execution_platform_${{ matrix.arch }} --extra_execution_platforms=//:ci_execution_platform_${{ matrix.arch }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -145,7 +139,6 @@ jobs:
           # shellcheck disable=SC2086
           bazel test \
             ${BAZEL_REMOTE_FALLBACK} \
-            ${BAZEL_ARCH_REMOTE_FLAGS} \
             ${BAZEL_PLATFORM_FLAGS} \
             --remote_header=x-buildbuddy-api-key="${BUILDBUDDY_ORG_API_KEY}" \
             //:coverage \
@@ -164,20 +157,20 @@ jobs:
             //:xref \
             //dialyzer_fixture:dialyzer
           # shellcheck disable=SC2086
-          bazel test ${BAZEL_REMOTE_FALLBACK} ${BAZEL_ARCH_REMOTE_FLAGS} ${BAZEL_PLATFORM_FLAGS} --remote_header=x-buildbuddy-api-key="${BUILDBUDDY_ORG_API_KEY}" --test_sharding_strategy=forced=2 //:test
+          bazel test ${BAZEL_REMOTE_FALLBACK} ${BAZEL_PLATFORM_FLAGS} --remote_header=x-buildbuddy-api-key="${BUILDBUDDY_ORG_API_KEY}" --test_sharding_strategy=forced=2 //:test
           # shellcheck disable=SC2086
-          bazel build ${BAZEL_REMOTE_FALLBACK} ${BAZEL_ARCH_REMOTE_FLAGS} ${BAZEL_PLATFORM_FLAGS} --remote_header=x-buildbuddy-api-key="${BUILDBUDDY_ORG_API_KEY}" //:digested_assets
+          bazel build ${BAZEL_REMOTE_FALLBACK} ${BAZEL_PLATFORM_FLAGS} --remote_header=x-buildbuddy-api-key="${BUILDBUDDY_ORG_API_KEY}" //:digested_assets
           test ! -e bazel-bin/lib_compile_build/.rules_elixir_mix_state
       - name: Exercise the writable local cache twice
         working-directory: integration
         run: |
           # shellcheck disable=SC2086
-          bazel run ${BAZEL_REMOTE_FALLBACK} ${BAZEL_ARCH_REMOTE_FLAGS} ${BAZEL_PLATFORM_FLAGS} --remote_header=x-buildbuddy-api-key="${BUILDBUDDY_ORG_API_KEY}" //:local
+          bazel run ${BAZEL_REMOTE_FALLBACK} ${BAZEL_PLATFORM_FLAGS} --remote_header=x-buildbuddy-api-key="${BUILDBUDDY_ORG_API_KEY}" //:local
           # shellcheck disable=SC2086
-          RULES_ELIXIR_MIX_REQUIRE_WARM_CACHE=true bazel run ${BAZEL_REMOTE_FALLBACK} ${BAZEL_ARCH_REMOTE_FLAGS} ${BAZEL_PLATFORM_FLAGS} --remote_header=x-buildbuddy-api-key="${BUILDBUDDY_ORG_API_KEY}" //:local
+          RULES_ELIXIR_MIX_REQUIRE_WARM_CACHE=true bazel run ${BAZEL_REMOTE_FALLBACK} ${BAZEL_PLATFORM_FLAGS} --remote_header=x-buildbuddy-api-key="${BUILDBUDDY_ORG_API_KEY}" //:local
           test ! -e lib/integration/generated_by_bazel.ex
           # shellcheck disable=SC2086
-          bazel test ${BAZEL_REMOTE_FALLBACK} ${BAZEL_ARCH_REMOTE_FLAGS} ${BAZEL_PLATFORM_FLAGS} --remote_header=x-buildbuddy-api-key="${BUILDBUDDY_ORG_API_KEY}" //:format //:typecheck //:xref
+          bazel test ${BAZEL_REMOTE_FALLBACK} ${BAZEL_PLATFORM_FLAGS} --remote_header=x-buildbuddy-api-key="${BUILDBUDDY_ORG_API_KEY}" //:format //:typecheck //:xref
 
   source-toolchain:
     strategy:
@@ -186,15 +179,16 @@ jobs:
         include:
           - arch: x86_64
             runner: ubuntu-24.04
+            platform_flags: --platforms=//:source_platform_x86_64 --extra_execution_platforms=//:source_platform_x86_64
           - arch: arm64
-            runner: ubuntu-24.04-arm
+            runner: ubuntu-24.04
+            platform_flags: --platforms=//:source_platform_arm64 --extra_execution_platforms=//:source_platform_arm64,//:source_platform_x86_64
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 180
     container:
       image: erlang@sha256:ec20ffd1224a25f6105eec70a684fd2d7f2cf83084dedb669346644bcee4c466
     env:
-      BAZEL_ARCH_REMOTE_FLAGS: ${{ matrix.arch == 'arm64' && '--remote_executor=' || '' }}
-      BAZEL_PLATFORM_FLAGS: --platforms=//:source_platform_${{ matrix.arch }} --extra_execution_platforms=//:source_platform_${{ matrix.arch }}
+      BAZEL_PLATFORM_FLAGS: ${{ matrix.platform_flags }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -208,20 +202,46 @@ jobs:
       - name: Package the checksum-pinned bootstrap runtime
         run: >-
           tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner
-          --format=gnu -czf /tmp/rules-elixir-mix-ci-otp-bootstrap-${{ matrix.arch }}.tar.gz
+          --format=gnu -czf /tmp/rules-elixir-mix-ci-otp-bootstrap-x86_64.tar.gz
           -C /usr/local/lib/erlang .
-      - name: Build the catalog-default OTP and Elixir tuple from pristine sources
+      - name: Test source-built OTP, Elixir, FIPS, and release runtime
+        if: ${{ env.BUILDBUDDY_ORG_API_KEY != '' }}
         working-directory: source_integration
         # These fixed environment values intentionally contain Bazel argument lists.
         run: >-
           # shellcheck disable=SC2086
 
-          bazel build
+          bazel test
           ${BAZEL_REMOTE_FALLBACK}
-          ${BAZEL_ARCH_REMOTE_FLAGS}
           ${BAZEL_PLATFORM_FLAGS}
           --remote_header=x-buildbuddy-api-key="${BUILDBUDDY_ORG_API_KEY}"
+          //:fips_runtime
+          //:release_test
+      - name: Analyze the source-toolchain graph without remote credentials
+        if: ${{ env.BUILDBUDDY_ORG_API_KEY == '' }}
+        working-directory: source_integration
+        # Fork pull requests cannot execute the native Arm64 runtime from this
+        # AMD64 client. Trusted CI executes the complete matrix above.
+        run: >-
+          # shellcheck disable=SC2086
+
+          bazel build --nobuild
+          ${BAZEL_REMOTE_FALLBACK}
+          ${BAZEL_PLATFORM_FLAGS}
           @elixir_config//catalog_source_${{ matrix.arch }}:runtime
+      - name: Require a warm source-toolchain cache
+        if: ${{ env.BUILDBUDDY_ORG_API_KEY != '' }}
+        working-directory: source_integration
+        # These fixed environment values intentionally contain Bazel argument lists.
+        run: >-
+          # shellcheck disable=SC2086
+
+          bazel test
+          ${BAZEL_REMOTE_FALLBACK}
+          ${BAZEL_PLATFORM_FLAGS}
+          --remote_header=x-buildbuddy-api-key="${BUILDBUDDY_ORG_API_KEY}"
+          //:fips_runtime
+          //:release_test
 
   validate-gate:
     name: validate

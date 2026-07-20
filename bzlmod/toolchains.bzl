@@ -83,6 +83,8 @@ def _toolchains_impl(module_ctx):
     bootstrap_runtime_files = {}
     bootstrap_erlexec_files = {}
     bootstrap_version_markers = {}
+    bootstrap_launcher_files = {}
+    bootstrap_exec_constraints = {}
     otp_source_files = {}
     otp_source_directory_manifests = {}
     otp_runtime_files = {}
@@ -100,6 +102,7 @@ def _toolchains_impl(module_ctx):
     crypto_sdk_files = {}
     fips_modes = {}
     static_crypto_nifs = {}
+    cross_compiles = {}
     configure_options = {}
     make_options = {}
     copts = {}
@@ -197,8 +200,13 @@ def _toolchains_impl(module_ctx):
             execution, target = _platform_constraints(tag)
             exec_constraints[tag.name] = execution
             target_constraints[tag.name] = target
+            bootstrap_execution = sorted({str(label): True for label in tag.bootstrap_exec_compatible_with}.keys())
+            if tag.cross_compile and not bootstrap_execution:
+                fail("source_toolchain '{}' cross_compile=True requires bootstrap_exec_compatible_with".format(tag.name))
+            bootstrap_exec_constraints[tag.name] = bootstrap_execution or execution
             fips_modes[tag.name] = tag.fips
             static_crypto_nifs[tag.name] = str(tag.static_crypto_nif)
+            cross_compiles[tag.name] = str(tag.cross_compile)
             defaults[tag.name] = tag.default
 
             bootstrap_repository = "rules_elixir_mix_bootstrap_otp_{}".format(tag.name)
@@ -215,6 +223,7 @@ def _toolchains_impl(module_ctx):
             bootstrap_runtime_files[tag.name] = _runtime_label(bootstrap_repository, "runtime")
             bootstrap_erlexec_files[tag.name] = _runtime_label(bootstrap_repository, tag.bootstrap_erlexec)
             bootstrap_version_markers[tag.name] = _runtime_label(bootstrap_repository, bootstrap_version_marker)
+            bootstrap_launcher_files[tag.name] = str(tag.bootstrap_launcher)
 
             otp_repository = "rules_elixir_mix_otp_sources_{}".format(tag.name)
             _fetch_source(
@@ -274,6 +283,8 @@ def _toolchains_impl(module_ctx):
         bootstrap_runtime_files = bootstrap_runtime_files,
         bootstrap_erlexec_files = bootstrap_erlexec_files,
         bootstrap_version_markers = bootstrap_version_markers,
+        bootstrap_launcher_files = bootstrap_launcher_files,
+        bootstrap_exec_compatible_withs = bootstrap_exec_constraints,
         otp_source_files = otp_source_files,
         otp_source_directory_manifests = otp_source_directory_manifests,
         otp_runtime_files = otp_runtime_files,
@@ -291,6 +302,7 @@ def _toolchains_impl(module_ctx):
         crypto_sdk_files = crypto_sdk_files,
         fips_modes = fips_modes,
         static_crypto_nifs = static_crypto_nifs,
+        cross_compiles = cross_compiles,
         configure_options = configure_options,
         make_options = make_options,
         copts = copts,
@@ -350,6 +362,8 @@ source_toolchain = tag_class(attrs = {
     "bootstrap_otp_type": attr.string(),
     "bootstrap_erlexec": attr.string(mandatory = True),
     "bootstrap_version_marker": attr.string(),
+    "bootstrap_launcher": attr.label(mandatory = True),
+    "bootstrap_exec_compatible_with": attr.label_list(),
     "otp_version": attr.string(default = DEFAULT_OTP_VERSION),
     "otp_url": attr.string(),
     "otp_urls": attr.string_list(),
@@ -380,6 +394,7 @@ source_toolchain = tag_class(attrs = {
     "runtime_abi": attr.label(mandatory = True),
     "fips": attr.string(default = "disabled", values = ["disabled", "required"]),
     "static_crypto_nif": attr.bool(default = False),
+    "cross_compile": attr.bool(default = False),
     "default": attr.bool(default = False),
 })
 

@@ -38,7 +38,35 @@ def _build_manifest(ctx, build_root, mix_env, apps):
 def _term_string(value):
     return _erl_string(value)
 
-def _build_crypto_release_inputs(ctx, sdk):
+def _json_string(value):
+    return '"{}"'.format(
+        value.replace("\\", "\\\\")
+            .replace('"', '\\"')
+            .replace("\n", "\\n")
+            .replace("\r", "\\r")
+            .replace("\t", "\\t"),
+    )
+
+def _json_array(values):
+    return "[{}]".format(",".join([_json_string(value) for value in values]))
+
+def _json_object(values):
+    return "{{{}}}".format(",".join([
+        "{}:{}".format(_json_string(key), _json_string(values[key]))
+        for key in sorted(values.keys())
+    ]))
+
+def _launch_template(value):
+    return value.replace("{sysroot}", "{sdk_root}")
+
+def _validate_release_name(value):
+    allowed = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_@-"
+    if not value or value[0] not in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_":
+        fail("release_name '{}' must begin with a letter or underscore".format(value))
+    if any([value[index] not in allowed for index in range(len(value))]):
+        fail("release_name '{}' contains a character unsafe for a native launcher path".format(value))
+
+def _build_crypto_release_inputs(ctx, sdk, release_name, fips_required):
     destinations = []
     for entry in sdk.runtime_entries:
         if entry.destination in destinations:
@@ -72,7 +100,89 @@ def _build_crypto_release_inputs(ctx, sdk):
             environment,
         ),
     )
-    return copy_manifest, activation_config
+    launch_config = ctx.actions.declare_file(ctx.label.name + "_crypto_launch.json")
+    arguments = ["-noshell"]
+    if fips_required:
+        arguments.extend(["-crypto", "fips_mode", "true"])
+    writable_sys_config = "{activation_root}/sys"
+    arguments.extend([
+        "-s",
+        "elixir",
+        "start_cli",
+        "-mode",
+        "embedded",
+        "-config",
+        writable_sys_config,
+        "-boot",
+        "{release_root}/releases/{release_version}/start",
+        "-boot_var",
+        "RELEASE_LIB",
+        "{release_root}/lib",
+        "-args_file",
+        "{release_root}/releases/{release_version}/vm.args",
+        "-extra",
+        "--no-halt",
+    ])
+    launch_environment = {
+        "BINDIR": "{release_root}/erts-{erts_version}/bin",
+        "EMU": "beam",
+        "HOME": "{activation_root}/home",
+        "LANG": "C",
+        "LC_ALL": "C",
+        "PATH": "{release_root}/erts-{erts_version}/bin",
+        "PROGNAME": release_name,
+        "RELEASE_MODE": "embedded",
+        "RELEASE_NAME": release_name,
+        "RELEASE_ROOT": "{release_root}",
+        "RELEASE_SYS_CONFIG": writable_sys_config,
+        "RELEASE_TMP": "{activation_root}/tmp",
+        "RELEASE_VSN": "{release_version}",
+        "ROOTDIR": "{release_root}",
+        "TZ": "UTC",
+    }
+    runtime_program = "{release_root}/erts-{erts_version}/bin/erlexec"
+    if sdk.execution_wrapper:
+        runtime_program = "{release_root}/erts-{erts_version}/bin/.real-erlexec"
+    runtime_environment = {
+        key: _launch_template(sdk.runtime_environment[key])
+        for key in sdk.runtime_environment
+    }
+    runtime_environment.update({
+        key: _launch_template(sdk.execution_wrapper_environment[key]).replace("{program}", runtime_program)
+        for key in sdk.execution_wrapper_environment
+    })
+    ctx.actions.write(
+        launch_config,
+        "{" + ",".join([
+            '"schema":1',
+            '"command":"start"',
+            '"sdk_root":"{release_root}/.rules_elixir_mix/crypto_sdk"',
+            '"activation_root_environment":"RULES_ELIXIR_MIX_CRYPTO_STATE"',
+            '"activation_args":' + _json_array([_launch_template(value) for value in sdk.activation_args]),
+            '"runtime_environment":' + _json_object(runtime_environment),
+            '"program":' + _json_string(runtime_program),
+            '"arguments":' + _json_array(arguments),
+            '"environment":' + _json_object(launch_environment),
+            '"writable_copies":[{' + ",".join([
+                '"source":"{release_root}/releases/{release_version}/sys.config"',
+                '"destination":"{activation_root}/sys.config"',
+            ]) + "}]",
+            '"unset_environment":' + _json_array([
+                "BASH_ENV",
+                "DYLD_LIBRARY_PATH",
+                "DYLD_INSERT_LIBRARIES",
+                "ELIXIR_ERL_OPTIONS",
+                "ERL_AFLAGS",
+                "ERL_FLAGS",
+                "ERL_LIBS",
+                "ERL_ROOTDIR",
+                "ERL_ZFLAGS",
+                "LD_LIBRARY_PATH",
+                "LD_PRELOAD",
+            ]),
+        ]) + "}\n",
+    )
+    return copy_manifest, activation_config, launch_config
 
 def _mix_release_impl(ctx):
     otp = ctx.toolchains["//:toolchain_type"].otpinfo
@@ -92,6 +202,7 @@ def _mix_release_impl(ctx):
         ))
     app_name = ctx.attr.app_name or app_info.app_name
     release_name = ctx.attr.release_name or app_name
+    _validate_release_name(release_name)
     mix_config = ctx.file.mix_config or mix_info.mix_config
 
     release_dir = ctx.actions.declare_directory(ctx.label.name + "_release")
@@ -111,19 +222,18 @@ def _mix_release_impl(ctx):
 
     crypto_manifest = None
     activation_config = None
+    launch_config = None
     if crypto_activation:
-        runtime_configs = [
-            file
-            for file in mix_info.project_files.to_list()
-            if file.basename == "runtime.exs"
-        ]
-        if not runtime_configs:
-            fail("provider-backed crypto releases require a declared config/runtime.exs so activation runs before applications start")
-        crypto_manifest, activation_config = _build_crypto_release_inputs(ctx, otp.crypto_sdk)
+        crypto_manifest, activation_config, launch_config = _build_crypto_release_inputs(
+            ctx,
+            otp.crypto_sdk,
+            release_name,
+            fips_required,
+        )
         files.extend([
             crypto_manifest,
             activation_config,
-            ctx.file._crypto_release_activation,
+            launch_config,
         ])
         files.extend([entry.file for entry in otp.crypto_sdk.runtime_entries])
 
@@ -133,7 +243,6 @@ def _mix_release_impl(ctx):
     }
     internal_env = {
         "RULES_ELIXIR_MIX_BUILD_MANIFEST": manifest.path,
-        "RULES_ELIXIR_MIX_LOAD_HEX": "true",
         "RULES_ELIXIR_MIX_PRELOAD_DEPS": "true",
         "RULES_ELIXIR_MIX_PREPARE_COMPILED_PROJECT": "true",
         "RULES_ELIXIR_MIX_RELEASE_ROOT": release_dir.path,
@@ -151,9 +260,13 @@ def _mix_release_impl(ctx):
     if crypto_activation:
         internal_env.update({
             "RULES_ELIXIR_MIX_CRYPTO_ACTIVATION_CONFIG": activation_config.path,
-            "RULES_ELIXIR_MIX_CRYPTO_RELEASE_HOOK": ctx.file._crypto_release_activation.path,
+            "RULES_ELIXIR_MIX_CRYPTO_LAUNCH_CONFIG": launch_config.path,
+            "RULES_ELIXIR_MIX_CRYPTO_LAUNCH_NAME": release_name,
+            "RULES_ELIXIR_MIX_CRYPTO_LAUNCH_TOOL": otp.crypto_sdk.activation_tool_release_path,
             "RULES_ELIXIR_MIX_CRYPTO_RELEASE_MANIFEST": crypto_manifest.path,
         })
+        if otp.crypto_sdk.execution_wrapper:
+            internal_env["RULES_ELIXIR_MIX_CRYPTO_EXECUTION_WRAPPER"] = otp.crypto_sdk.execution_wrapper_release_path
     internal_env["RULES_ELIXIR_MIX_OUTPUT"] = release_dir.path
     release_args = ([ctx.attr.release_name] if ctx.attr.release_name else []) + [
         "--path",
@@ -211,10 +324,6 @@ mix_release = rule(
         "fips": attr.string(default = "toolchain", values = ["disabled", "required", "toolchain"]),
         "mix_env": attr.string(default = "prod", values = ["prod", "dev", "test", "staging"]),
         "release_name": attr.string(),
-        "_crypto_release_activation": attr.label(
-            default = Label("//private:crypto_release_activation.exs"),
-            allow_single_file = [".exs"],
-        ),
         "_crypto_release_enforcement": attr.label(
             default = Label("//private:crypto_release_enforcement.exs"),
             allow_single_file = [".exs"],

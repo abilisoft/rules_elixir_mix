@@ -1,6 +1,6 @@
 """Direct, shell-free Mix execution helpers."""
 
-load("//private:beam_info.bzl", "ErlangAppInfo", "crypto_exec_inputs", "crypto_exec_tools", "crypto_runtime_files", "erl_env_flags", "execution_root_path", "fips_erl_args", "flat_deps", "otp_runtime_env", "path_join", "runtime_path_erl_args", "test_erl_launcher")
+load("//private:beam_info.bzl", "ErlangAppInfo", "crypto_runtime_files", "erl_env_flags", "execution_erlexec", "execution_erts_bin", "execution_root_path", "fips_erl_args", "flat_deps", "otp_runtime_env", "path_join", "prepare_crypto_runtime", "runtime_path_erl_args", "test_erl_launcher")
 load("//private:mix_info.bzl", "MixProjectInfo")
 
 _MIX_EVAL = """
@@ -476,14 +476,49 @@ try do
         Path.join(state_root, "crypto_activation.config")
       )
       make_writable.(make_writable, Path.join(state_root, "crypto_activation.config"))
-      hook = File.read!(System.fetch_env!("RULES_ELIXIR_MIX_CRYPTO_RELEASE_HOOK"))
-      runtime_configs = Path.wildcard(Path.join([release_root, "releases", "*", "runtime.exs"]))
-      if runtime_configs == [], do: raise("provider-backed crypto release has no generated runtime.exs")
-
-      Enum.each(runtime_configs, fn runtime_config ->
-        existing = File.read!(runtime_config)
-        File.write!(runtime_config, [hook, "\n", existing])
-      end)
+      [erts_version, release_version | _] =
+        release_root
+        |> Path.join("releases/start_erl.data")
+        |> File.read!()
+        |> String.split()
+      case System.get_env("RULES_ELIXIR_MIX_CRYPTO_EXECUTION_WRAPPER") do
+        nil -> :ok
+        relative_wrapper ->
+          wrapper = Path.join(sdk_root, relative_wrapper)
+          erts_bin = Path.join(release_root, "erts-#{erts_version}/bin")
+          erts_bin
+          |> File.ls!()
+          |> Enum.sort()
+          |> Enum.each(fn child ->
+            path = Path.join(erts_bin, child)
+            stat = File.lstat!(path)
+            if stat.type == :regular and Bitwise.band(stat.mode, 0o111) != 0 do
+              real = Path.join(erts_bin, ".real-#{child}")
+              File.rm_rf!(real)
+              File.rename!(path, real)
+              File.cp!(wrapper, path)
+              File.chmod!(path, 0o755)
+            end
+          end)
+      end
+      launch_name = System.fetch_env!("RULES_ELIXIR_MIX_CRYPTO_LAUNCH_NAME")
+      launcher = Path.join([release_root, "bin", launch_name])
+      launch_tool = Path.join([
+        release_root,
+        ".rules_elixir_mix",
+        "crypto_sdk",
+        System.fetch_env!("RULES_ELIXIR_MIX_CRYPTO_LAUNCH_TOOL")
+      ])
+      launch_config =
+        System.fetch_env!("RULES_ELIXIR_MIX_CRYPTO_LAUNCH_CONFIG")
+        |> absolute_input.()
+        |> File.read!()
+        |> String.replace("{erts_version}", erts_version)
+        |> String.replace("{release_version}", release_version)
+      File.rm_rf!(launcher)
+      File.cp!(launch_tool, launcher)
+      File.chmod!(launcher, 0o755)
+      File.write!(launcher <> ".rules_fips.json", launch_config)
   end
   case System.get_env("RULES_ELIXIR_MIX_RELEASE_PROTOCOLS") do
     nil -> :ok
@@ -767,7 +802,7 @@ def mix_action_env(ctx, mix_env, build_root, deps, internal_extra = {}, user_ext
         "MIX_ENV": mix_env,
         "MIX_HOME": path_join(work_root, "mix"),
         "MIX_OS_CONCURRENCY_LOCK": "false",
-        "PATH": toolchain.otpinfo.erts_bin,
+        "PATH": execution_erts_bin(toolchain.otpinfo),
         "SOURCE_DATE_EPOCH": "946684800",
         "TMPDIR": path_join(work_root, "tmp"),
         "TZ": "UTC",
@@ -823,6 +858,11 @@ def run_mix_action(
       mnemonic: Bazel action mnemonic.
     """
     toolchain = _toolchain(ctx, exec_group)
+    activation = prepare_crypto_runtime(
+        ctx,
+        toolchain.otpinfo,
+        ctx.label.name + "_" + mnemonic.lower() + "_crypto_state",
+    )
     project_manifest = _project_manifest(ctx, mix_config, project_inputs, project_entries = project_entries)
     dependency_manifest, dependency_inputs = _dependency_manifest(ctx, deps)
     build_cache_manifest = _build_cache_manifest(ctx, flat_deps(deps)) if stage_build_cache else None
@@ -838,6 +878,7 @@ def run_mix_action(
             "RULES_ELIXIR_MIX_REMOVE_STAGED_DEPS": "true",
         })
     env = mix_action_env(ctx, mix_env, build_root, deps, internal, user_env, toolchain)
+    env.update(activation.environment)
     env.update({
         "RULES_ELIXIR_MIX_EXS": mix_config.basename,
         "RULES_ELIXIR_MIX_PROJECT_DIR": path_join(state_dir, "project"),
@@ -848,7 +889,7 @@ def run_mix_action(
     args.add_all([
         "-noshell",
         "+fnu",
-    ] + fips_erl_args(toolchain.otpinfo) + [
+    ] + fips_erl_args(toolchain.otpinfo, activate = False) + [
         "-s",
         "elixir",
         "start_cli",
@@ -860,7 +901,7 @@ def run_mix_action(
     ])
     args.add_all(task_args)
 
-    transitive_inputs = [toolchain.runtime_files, crypto_exec_inputs(toolchain.otpinfo)] + [
+    transitive_inputs = [toolchain.runtime_files, activation.files] + [
         dep[DefaultInfo].files
         for dep in flat_deps(deps)
     ]
@@ -874,7 +915,7 @@ def run_mix_action(
     action_parameters = {
         "arguments": [args],
         "env": env,
-        "executable": toolchain.otpinfo.erlexec,
+        "executable": execution_erlexec(toolchain.otpinfo),
         "execution_requirements": execution_requirements,
         "inputs": depset(
             direct = inputs + dependency_inputs + [project_manifest, dependency_manifest] + ([build_cache_manifest] if build_cache_manifest else []),
@@ -882,7 +923,7 @@ def run_mix_action(
         ),
         "mnemonic": mnemonic,
         "outputs": outputs,
-        "tools": crypto_exec_tools(toolchain.otpinfo) + action_tools,
+        "tools": action_tools,
         "use_default_shell_env": False,
     }
     if exec_group:
@@ -987,6 +1028,12 @@ def mix_test_result(ctx, task, task_args, srcs, data, tools):
       DefaultInfo and RunEnvironmentInfo for the test executable.
     """
     toolchain = _toolchain(ctx)
+    activation = prepare_crypto_runtime(
+        ctx,
+        toolchain.otpinfo,
+        ctx.label.name + "_crypto_state",
+        runfiles = True,
+    )
     lib_info = ctx.attr.lib[ErlangAppInfo]
     mix_info = ctx.attr.lib[MixProjectInfo]
     postgres_args, postgres_environment, postgres_targets = _postgres_runtime(ctx)
@@ -1013,7 +1060,7 @@ def mix_test_result(ctx, task, task_args, srcs, data, tools):
     erl_args = runtime_path_erl_args() + [
         "-noshell",
         "+fnu",
-    ] + fips_erl_args(toolchain.otpinfo, runfiles = True) + [
+    ] + fips_erl_args(toolchain.otpinfo, runfiles = True, activate = False) + [
         "-eval",
         _stage_expression(),
     ] + postgres_args + [
@@ -1032,6 +1079,7 @@ def mix_test_result(ctx, task, task_args, srcs, data, tools):
     erl_libs.extend(_app_lib_dirs(erl_lib_targets, short_path = True))
 
     environment = otp_runtime_env(toolchain.otpinfo, runfiles = True)
+    environment.update(activation.environment)
     environment.update({
         "ERL_AFLAGS": erl_env_flags(erl_args),
         "ERL_LIBS": ":".join(erl_libs),
@@ -1071,6 +1119,7 @@ def mix_test_result(ctx, task, task_args, srcs, data, tools):
         transitive_files = depset(transitive = [
             toolchain.runtime_files,
             crypto_runtime_files(toolchain.otpinfo),
+            activation.files,
         ]),
     ).merge(ctx.attr.lib[DefaultInfo].default_runfiles)
     for app in app_targets:

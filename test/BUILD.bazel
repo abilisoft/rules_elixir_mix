@@ -360,7 +360,6 @@ mix_release(
 
 elixir_fips_runtime_test(
     name = "fips_runtime_analysis_fixture",
-    elf_inspector = ":fake_activation",
     tags = ["manual"],
 )
 

@@ -1,6 +1,6 @@
 """Direct, cacheable Erlang/OTP application rule."""
 
-load("//private:beam_info.bzl", "ErlangAppInfo", "compile_depset", "crypto_exec_inputs", "crypto_exec_tools", "fips_erl_args", "flat_compile_deps", "otp_runtime_env", "runtime_depset", "type_depset")
+load("//private:beam_info.bzl", "ErlangAppInfo", "compile_depset", "execution_erlexec", "execution_erts_bin", "fips_erl_args", "flat_compile_deps", "otp_runtime_env", "prepare_crypto_runtime", "runtime_depset", "type_depset")
 
 _DRIVER_EVAL = "A=init:get_plain_arguments(),[N,S|R]=A,{ok,artifact_normalizer,NB}=compile:file(N,[binary,report_errors,report_warnings]),{module,artifact_normalizer}=code:load_binary(artifact_normalizer,N,NB),C=compile:file(S,[binary,report_errors,report_warnings]),M=element(2,C),B=element(3,C),{module,M}=code:load_binary(M,S,B),M:main(R),halt()."
 
@@ -62,6 +62,7 @@ def _erlang_app_impl(ctx):
 
     compile_deps = flat_compile_deps(ctx.attr.compile_deps + ctx.attr.type_deps + ctx.attr.runtime_deps)
     toolchain = ctx.toolchains["//:otp_toolchain_type"]
+    activation = prepare_crypto_runtime(ctx, toolchain.otpinfo, ctx.label.name + "_crypto_state")
     output = ctx.actions.declare_directory(ctx.label.name + "_lib")
     fingerprint = ctx.actions.declare_file(ctx.label.name + "_fingerprint")
     include_files = list(ctx.files.hdrs)
@@ -117,7 +118,7 @@ def _erlang_app_impl(ctx):
     args = ctx.actions.args()
     args.add_all([
         "-noshell",
-    ] + fips_erl_args(toolchain.otpinfo) + [
+    ] + fips_erl_args(toolchain.otpinfo, activate = False) + [
         "-eval",
         _DRIVER_EVAL,
         "-extra",
@@ -126,25 +127,25 @@ def _erlang_app_impl(ctx):
         config,
     ])
     environment = otp_runtime_env(toolchain.otpinfo)
+    environment.update(activation.environment)
     environment.update({
         "ERL_COMPILER_OPTIONS": "deterministic",
         "ERL_LIBS": ":".join(lib_dirs),
         "HOME": output.path + ".work/home",
         "LANG": "C",
         "LC_ALL": "C",
-        "PATH": toolchain.otpinfo.erts_bin,
+        "PATH": execution_erts_bin(toolchain.otpinfo),
         "RULES_ELIXIR_MIX_CRYPTO_STATE": output.path + ".work/crypto_state",
         "SOURCE_DATE_EPOCH": "946684800",
         "TZ": "UTC",
     })
     ctx.actions.run(
-        executable = toolchain.otpinfo.erlexec,
+        executable = execution_erlexec(toolchain.otpinfo),
         arguments = [args],
         inputs = depset(
             direct = sources + app_srcs + include_files + ctx.files.priv + [config, ctx.file._driver, ctx.file._normalizer],
-            transitive = [toolchain.runtime_files, crypto_exec_inputs(toolchain.otpinfo)] + [dep[DefaultInfo].files for dep in compile_deps],
+            transitive = [toolchain.runtime_files, activation.files] + [dep[DefaultInfo].files for dep in compile_deps],
         ),
-        tools = crypto_exec_tools(toolchain.otpinfo),
         outputs = [output, fingerprint],
         env = environment,
         execution_requirements = {"block-network": "1"},

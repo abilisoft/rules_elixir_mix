@@ -1,42 +1,76 @@
-constraint_setting(
-    name = "runtime_abi",
-    default_constraint_value = ":source_runtime_abi_x86_64",
+load(
+    "@rules_elixir_mix//:defs.bzl",
+    "elixir_fips_runtime_test",
+    "elixir_release_test",
+    "mix_library",
+    "mix_release",
 )
+load(":rules_fips_sdk.bzl", "rules_fips_crypto_sdk")
 
-constraint_value(
-    name = "source_runtime_abi_x86_64",
-    constraint_setting = ":runtime_abi",
-    visibility = ["//visibility:public"],
-)
+package(default_visibility = ["//visibility:public"])
+
+rules_fips_crypto_sdk(name = "openssl_fips_crypto_sdk")
 
 platform(
     name = "source_platform_x86_64",
     constraint_values = [
-        ":source_runtime_abi_x86_64",
+        "@rules_fips//fips/platforms:openssl_fips_musl_amd64",
         "@elixir_config//:runtime_catalog_source_x86_64",
         "@platforms//cpu:x86_64",
         "@platforms//os:linux",
     ],
     exec_properties = {
+        "Arch": "amd64",
+        "EstimatedCPU": "4",
+        "EstimatedMemory": "8GB",
+        "OSFamily": "linux",
         "container-image": "docker://erlang@sha256:ec20ffd1224a25f6105eec70a684fd2d7f2cf83084dedb669346644bcee4c466",
     },
-)
-
-constraint_value(
-    name = "source_runtime_abi_arm64",
-    constraint_setting = ":runtime_abi",
-    visibility = ["//visibility:public"],
 )
 
 platform(
     name = "source_platform_arm64",
     constraint_values = [
-        ":source_runtime_abi_arm64",
+        "@rules_fips//fips/platforms:openssl_fips_musl_arm64",
         "@elixir_config//:runtime_catalog_source_arm64",
         "@platforms//cpu:arm64",
         "@platforms//os:linux",
     ],
     exec_properties = {
+        "Arch": "arm64",
+        "EstimatedCPU": "4",
+        "EstimatedMemory": "8GB",
+        "OSFamily": "linux",
         "container-image": "docker://erlang@sha256:ec20ffd1224a25f6105eec70a684fd2d7f2cf83084dedb669346644bcee4c466",
     },
+)
+
+elixir_fips_runtime_test(
+    name = "fips_runtime",
+    tags = ["manual"],
+)
+
+mix_library(
+    name = "app",
+    srcs = glob(["lib/**/*.ex"]),
+    app_name = "source_integration_app",
+    config = ["config/runtime.exs"],
+    mix_config = "mix.exs",
+    mix_env = "prod",
+)
+
+mix_release(
+    name = "release",
+    application = ":app",
+    fips = "required",
+)
+
+elixir_release_test(
+    name = "release_test",
+    release = ":release",
+    required_paths = [
+        ".rules_elixir_mix/crypto_activation.config",
+        ".rules_elixir_mix/crypto_sdk/bin/crypto-activate",
+        "bin/source_integration_app.rules_fips.json",
+    ],
 )

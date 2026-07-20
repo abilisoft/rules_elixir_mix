@@ -40,6 +40,8 @@ OtpInfo = provider(
         "erlexec": "Declared native erlexec executable; never the bin/erl shell script.",
         "erts_bin": "Action-time ERTS directory containing beam.smp and erlexec.",
         "erts_bin_short_path": "Runfiles-relative ERTS directory.",
+        "exec_erts_bin": "Execution-configured ERTS launcher directory.",
+        "exec_erts_bin_short_path": "Runfiles-relative execution-configured ERTS launcher directory.",
         "crypto_sdk": "Normalized OtpCryptoSdkInfo, or None.",
         "fips": "FIPS policy: disabled or required.",
         "version_file": "Declared version file used for cache invalidation.",
@@ -49,17 +51,23 @@ OtpInfo = provider(
 )
 
 OtpCryptoSdkInfo = provider(
-    doc = "Backend-neutral static crypto SDK consumed by an OTP build.",
+    doc = "Backend-neutral crypto SDK consumed by an OTP build.",
     fields = {
         "activation_args": "Direct argument vector for the optional activation executable.",
         "activation_exec_tool": "Execution-configured FilesToRunProvider used by build actions, or None.",
         "activation_tool": "FilesToRunProvider for activation, or None.",
         "activation_tool_release_path": "Activation executable path relative to the staged release SDK.",
         "backend_metadata": "Opaque producer metadata; rules_elixir_mix never interprets it.",
-        "exec_files": "Execution-configured activation files used only by build actions.",
+        "exec_files": "Execution-configured tools and support files used only by build actions.",
+        "exec_support_files": "Additional execution-only files required by opaque SDK tools.",
+        "execution_exec_wrapper": "Execution-configured shell-free runtime wrapper, or None.",
+        "execution_wrapper": "Target-configured shell-free runtime wrapper, or None.",
+        "execution_wrapper_environment": "Opaque environment templates required by the runtime wrapper.",
+        "execution_wrapper_release_path": "Runtime-wrapper path relative to the staged release SDK.",
         "files": "Target-configured SDK and deployment files.",
         "fully_static": "Whether the SDK has no provider runtime payload or activation step.",
         "linkopts": "Backend-neutral libraries/options appended through OTP's LIBS contract.",
+        "prepared_state": "Execution-prepared provider state shared by BEAM actions, or None.",
         "runtime_entries": "Runtime files and their SDK-relative release destinations.",
         "runtime_environment": "Environment values with {sysroot}/{activation_root} placeholders.",
         "runtime_files": "Depset containing only the deployment runtime payload.",
@@ -70,7 +78,7 @@ OtpCryptoSdkInfo = provider(
 _EXECUTION_ROOT_MARKER = "/proc/self/cwd/"
 _RUNTIME_PATH_EVAL = """
 {ok,Cwd}=file:get_cwd(),
-Marker="/proc/self/cwd/",
+Marker="/proc/self/"++"cwd/",
 Resolve=fun(P)->
   case lists:prefix(Marker,P) of
     true->filename:join(Cwd,lists:nthtail(length(Marker),P));
@@ -89,7 +97,7 @@ lists:foreach(fun(Entry)->
     _->ok
   end
 end,os:getenv()),
-PathKeys=["BINDIR","ERL_ROOTDIR","FIPS_MODULE_CONF","HEX_HOME","HOME","MIX_ARCHIVES","MIX_BUILD_PATH","MIX_BUILD_ROOT","MIX_DEPS_PATH","MIX_HOME","OPENSSL_CONF","OPENSSL_MODULES","REBAR_BASE_DIR","REBAR_CACHE_DIR","REBAR_CONFIG","REBAR_GLOBAL_CONFIG_DIR","ROOTDIR","RULES_ELIXIR_MIX_BUILD_CACHE_MANIFEST","RULES_ELIXIR_MIX_BUILD_MANIFEST","RULES_ELIXIR_MIX_BUILD_ROOT","RULES_ELIXIR_MIX_CRYPTO_STATE","RULES_ELIXIR_MIX_ERTS_PATH","RULES_ELIXIR_MIX_INCLUDE_MANIFEST","RULES_ELIXIR_MIX_OUTPUT","RULES_ELIXIR_MIX_PRIV_MANIFEST","RULES_ELIXIR_MIX_PROJECT_DIR","RULES_ELIXIR_MIX_PROJECT_MANIFEST","RULES_ELIXIR_MIX_DEPS_MANIFEST","RULES_ELIXIR_MIX_REBAR3","RULES_ELIXIR_MIX_REBAR_CONFIG","RULES_ELIXIR_MIX_RELEASE_ROOT","RULES_ELIXIR_MIX_FIPS_RELEASE_ROOT","RULES_ELIXIR_MIX_CRYPTO_ACTIVATION_CONFIG","RULES_ELIXIR_MIX_CRYPTO_RELEASE_HOOK","RULES_ELIXIR_MIX_CRYPTO_RELEASE_MANIFEST","RULES_ELIXIR_MIX_FIPS_RELEASE_ENFORCEMENT","TMPDIR"],
+PathKeys=["BINDIR","ERL_ROOTDIR","FIPS_MODULE_CONF","HEX_HOME","HOME","MIX_ARCHIVES","MIX_BUILD_PATH","MIX_BUILD_ROOT","MIX_DEPS_PATH","MIX_HOME","OPENSSL_CONF","OPENSSL_MODULES","REBAR_BASE_DIR","REBAR_CACHE_DIR","REBAR_CONFIG","REBAR_GLOBAL_CONFIG_DIR","ROOTDIR","RULES_ELIXIR_MIX_BUILD_CACHE_MANIFEST","RULES_ELIXIR_MIX_BUILD_MANIFEST","RULES_ELIXIR_MIX_BUILD_ROOT","RULES_ELIXIR_MIX_CRYPTO_STATE","RULES_ELIXIR_MIX_ERTS_PATH","RULES_ELIXIR_MIX_INCLUDE_MANIFEST","RULES_ELIXIR_MIX_OUTPUT","RULES_ELIXIR_MIX_PRIV_MANIFEST","RULES_ELIXIR_MIX_PROJECT_DIR","RULES_ELIXIR_MIX_PROJECT_MANIFEST","RULES_ELIXIR_MIX_DEPS_MANIFEST","RULES_ELIXIR_MIX_REBAR3","RULES_ELIXIR_MIX_REBAR_CONFIG","RULES_ELIXIR_MIX_RELEASE_ROOT","RULES_ELIXIR_MIX_FIPS_RELEASE_ROOT","RULES_ELIXIR_MIX_CRYPTO_ACTIVATION_CONFIG","RULES_ELIXIR_MIX_CRYPTO_LAUNCH_CONFIG","RULES_ELIXIR_MIX_CRYPTO_RELEASE_MANIFEST","RULES_ELIXIR_MIX_FIPS_RELEASE_ENFORCEMENT","TMPDIR"],
 lists:foreach(fun(Key)->case os:getenv(Key) of false->ok;Value->true=os:putenv(Key,Resolve(Value)) end end,PathKeys),
 case os:getenv("RULES_ELIXIR_MIX_ERTS_PATH") of false->ok;ErtsPath->true=os:putenv("PATH",ErtsPath) end,
 lists:foreach(fun(Key)->case os:getenv(Key) of false->ok;Value->true=os:putenv(Key,string:join([Resolve(Path)||Path<-string:tokens(Value,":")],":")) end end,["ERL_LIBS","PATH"]),
@@ -139,113 +147,65 @@ def path_join(*parts):
         result = part.rstrip("/") if not result else result.rstrip("/") + "/" + part.strip("/")
     return result
 
-def _erl_string(value):
-    return '"{}"'.format(
-        value.replace("\\", "\\\\")
-            .replace('"', '\\"')
-            .replace("\n", "\\n")
-            .replace("\r", "\\r")
-            .replace("\t", "\\t"),
-    )
+def fips_erl_args(otp_info, runfiles = False, activate = False):
+    """Return the VM arguments that enable required FIPS mode before boot.
 
-def _runtime_value_expression(value, sysroot_expression, activation_root = "R"):
-    """Render a provider template as an Erlang iolist expression."""
-    return "lists:flatten(string:replace(string:replace({value},{sysroot_token},{sysroot},all),{activation_token},{activation_root},all))".format(
-        value = _erl_string(value),
-        sysroot_token = _erl_string("{sysroot}"),
-        sysroot = sysroot_expression,
-        activation_token = _erl_string("{activation_root}"),
-        activation_root = activation_root,
-    )
-
-def fips_erl_args(otp_info, runfiles = False):
-    """Return VM arguments that activate crypto and set required FIPS mode early.
+    Provider activation cannot happen inside this VM: OpenSSL and other
+    provider-backed SDKs may initialize before an Erlang `-eval` runs. Callers
+    prepare the SDK with `prepare_crypto_runtime` and inject its environment
+    before starting erlexec.
 
     Args:
       otp_info: Selected OtpInfo provider.
-      runfiles: Whether paths must use runfiles-relative short paths.
+      runfiles: Retained for call-site readability; the arguments contain no paths.
+      activate: Must remain False. In-VM activation is intentionally rejected.
 
     Returns:
       Erlang command-line arguments for a FIPS-required runtime, or an empty list.
     """
-    fips_required = otp_info.fips == "required"
-    args = ["-crypto", "fips_mode", "true"] if fips_required else []
-    sdk = otp_info.crypto_sdk
-    activation_tool = None
-    if sdk:
-        activation_tool = sdk.activation_tool if runfiles else sdk.activation_exec_tool
-    if not sdk or not activation_tool:
-        if not sdk and not fips_required:
-            return args
+    _ = runfiles
+    if activate:
+        fail("crypto SDK activation must be prepared before the Erlang VM starts")
+    return ["-crypto", "fips_mode", "true"] if otp_info.fips == "required" else []
 
-        # A fully static backend must not consult OpenSSL's compiled host
-        # OPENSSLDIR/MODULESDIR defaults. Point every provider/config lookup at
-        # a rule-owned empty directory even when the backend ignores them.
-        isolation = ",".join([
-            "R0=case os:getenv(\"RULES_ELIXIR_MIX_CRYPTO_STATE\") of false->case os:getenv(\"TEST_TMPDIR\") of false->case os:getenv(\"HOME\") of false->os:getenv(\"TMPDIR\",\".\");H->H end;T->T end;V->V end",
-            "R=filename:absname(filename:join(R0,\"crypto_isolation\"))",
-            "ok=filelib:ensure_dir(filename:join(R,\".keep\"))",
-            "C=filename:join(R,\"openssl.cnf\")",
-            "ok=file:write_file(C,<<>>)",
-            "true=os:putenv(\"OPENSSL_CONF\",C)",
-            "true=os:putenv(\"OPENSSL_MODULES\",R)",
-            "true=os:putenv(\"FIPS_MODULE_CONF\",C)",
-            "ok",
-        ])
-        return args + [
-            "-eval",
-            "begin " + isolation + " end.",
-        ]
+def prepare_crypto_runtime(ctx, otp_info, output_name, runfiles = False):
+    """Use crypto SDK state prepared before an Erlang VM starts.
+
+    The normalized SDK rule prepares provider state exactly once per Bazel
+    configuration. Every consumer reuses that declared, cacheable artifact and
+    renders the producer-defined environment before VM startup. Packaged
+    releases remain responsible for their own per-deployment activation.
+
+    Args:
+      ctx: Retained for call-site compatibility.
+      otp_info: Selected OtpInfo provider.
+      output_name: Retained for call-site compatibility.
+      runfiles: Whether returned environment paths target a runfiles tree.
+
+    Returns:
+      A struct with files and environment fields.
+    """
+    _ = ctx
+    _ = output_name
+    sdk = otp_info.crypto_sdk
+    if not sdk or not sdk.prepared_state:
+        return struct(environment = {}, files = depset())
 
     sysroot = sdk.sysroot.short_path if runfiles else sdk.sysroot.path
-    executable = activation_tool.executable.short_path if runfiles else activation_tool.executable.path
-    activation_args = [
-        _runtime_value_expression(value, "SdkRoot")
-        for value in sdk.activation_args
-    ]
-    runtime_environment = [
-        "true=os:putenv({},{})".format(
-            _erl_string(key),
-            _runtime_value_expression(sdk.runtime_environment[key], "SdkRoot"),
-        )
-        for key in sorted(sdk.runtime_environment.keys())
-    ]
-    expression = ",".join([
-        "SdkRoot=filename:absname(%s)" % _erl_string(sysroot),
-        "R0=case os:getenv(\"RULES_ELIXIR_MIX_CRYPTO_STATE\") of false->case os:getenv(\"TEST_TMPDIR\") of false->case os:getenv(\"HOME\") of false->os:getenv(\"TMPDIR\",\".\");H->H end;T->T end;V->V end",
-        "R=filename:absname(filename:join(R0,\"crypto_activation\"))",
-        "ok=filelib:ensure_dir(filename:join(R,\".keep\"))",
-        "I=filename:join(R,\"isolation\")",
-        "ok=filelib:ensure_dir(filename:join(I,\".keep\"))",
-        "C=filename:join(I,\"openssl.cnf\")",
-        "ok=file:write_file(C,<<>>)",
-        "true=os:putenv(\"OPENSSL_CONF\",C)",
-        "true=os:putenv(\"OPENSSL_MODULES\",I)",
-        "true=os:putenv(\"FIPS_MODULE_CONF\",C)",
-        "P=open_port({spawn_executable,filename:absname(%s)},[binary,exit_status,stderr_to_stdout,use_stdio,{args,[%s]}])" % (
-            _erl_string(executable),
-            ",".join(activation_args),
+    activation_root = sdk.prepared_state.short_path if runfiles else sdk.prepared_state.path
+    environment = {
+        key: value.replace("{sysroot}", execution_root_path(sysroot)).replace("{activation_root}", execution_root_path(activation_root))
+        for key, value in sdk.runtime_environment.items()
+    }
+    return struct(
+        environment = environment,
+        files = depset(
+            direct = [sdk.prepared_state, sdk.sysroot],
         ),
-        "A=fun F()->receive {P,{data,D}}->io:put_chars(standard_error,D),F();{P,{exit_status,0}}->ok;{P,{exit_status,Status}}->erlang:error({crypto_activation_failed,Status}) end end",
-        "ok=A()",
-    ] + runtime_environment + ["ok"])
-    return args + ["-eval", "begin " + expression + " end."]
-
-def crypto_exec_inputs(otp_info):
-    """Return execution-configured provider activation inputs for an action."""
-    sdk = otp_info.crypto_sdk
-    return depset(
-        direct = [sdk.sysroot],
-        transitive = [sdk.exec_files],
-    ) if sdk and sdk.activation_exec_tool else depset()
-
-def crypto_exec_tools(otp_info):
-    """Return execution-configured provider activation tools for an action."""
-    sdk = otp_info.crypto_sdk
-    return [sdk.activation_exec_tool] if sdk and sdk.activation_exec_tool else []
+    )
 
 def crypto_runtime_files(otp_info):
-    """Return target-configured crypto deployment files needed at runtime.
+    """Return crypto target and exec files needed by Bazel-run executables.
 
     Fully static SDKs deliberately contribute nothing: their sysroot is a
     build input, not release payload. Provider-backed SDKs need the normalized
@@ -253,21 +213,23 @@ def crypto_runtime_files(otp_info):
     references both the sysroot and the activation executable through runfiles.
     """
     sdk = otp_info.crypto_sdk
-    return sdk.files if sdk and sdk.activation_tool else depset()
+    return depset(transitive = [sdk.files, sdk.exec_files]) if sdk and sdk.activation_tool else depset()
 
-def otp_runtime_env(otp_info, runfiles = False):
+def otp_runtime_env(otp_info, runfiles = False, use_execution_overlay = True):
     """Return the environment required to invoke erlexec directly.
 
     Args:
       otp_info: Selected OtpInfo provider.
       runfiles: Whether paths must be runfiles-relative short paths.
+      use_execution_overlay: Whether to select execution-configured ERTS launchers.
 
     Returns:
       A deterministic environment fragment for the native VM launcher.
     """
     root = otp_info.erlang_home_short_path if runfiles else otp_info.erlang_home
-    bindir = otp_info.erts_bin_short_path if runfiles else otp_info.erts_bin
-    return {
+    sdk = getattr(otp_info, "crypto_sdk", None)
+    bindir = execution_erts_bin(otp_info, runfiles = runfiles) if use_execution_overlay else (otp_info.erts_bin_short_path if runfiles else otp_info.erts_bin)
+    environment = {
         "BINDIR": execution_root_path(bindir),
         "EMU": "beam",
         "ERL_AFLAGS": erl_env_flags(runtime_path_erl_args()),
@@ -276,6 +238,38 @@ def otp_runtime_env(otp_info, runfiles = False):
         "RULES_ELIXIR_MIX_ERTS_PATH": execution_root_path(bindir),
         "ROOTDIR": execution_root_path(root),
     }
+    wrapper = sdk.execution_exec_wrapper if sdk and use_execution_overlay else (sdk.execution_wrapper if sdk else None)
+    if not wrapper:
+        return environment
+    sysroot = sdk.sysroot.short_path if runfiles else sdk.sysroot.path
+    program = path_join(bindir, ".real-erlexec")
+    sysroot = execution_root_path(sysroot)
+    program = execution_root_path(program)
+    environment.update({
+        key: value.replace("{sysroot}", sysroot).replace("{program}", program)
+        for key, value in sdk.execution_wrapper_environment.items()
+    })
+    return environment
+
+def execution_erts_bin(otp_info, runfiles = False):
+    """Return the ERTS directory runnable on the execution platform."""
+    sdk = getattr(otp_info, "crypto_sdk", None)
+    if sdk and sdk.execution_exec_wrapper and getattr(otp_info, "exec_erts_bin", ""):
+        return otp_info.exec_erts_bin_short_path if runfiles else otp_info.exec_erts_bin
+    return otp_info.erts_bin_short_path if runfiles else otp_info.erts_bin
+
+def execution_erlexec(otp_info):
+    """Return the erlexec launcher that can run on the execution platform.
+
+    Cross-architecture OTP runtimes keep their real target erlexec in the
+    execution overlay and expose the normalized SDK wrapper at the public
+    erlexec path. Native runtimes retain the declared File executable so Bazel
+    can model it directly.
+    """
+    sdk = getattr(otp_info, "crypto_sdk", None)
+    if sdk and sdk.execution_exec_wrapper and getattr(otp_info, "exec_erts_bin", ""):
+        return path_join(execution_erts_bin(otp_info), "erlexec")
+    return otp_info.erlexec
 
 def test_erl_launcher(ctx, otp_info):
     """Create the Bazel-owned executable required by test rules.
@@ -291,9 +285,11 @@ def test_erl_launcher(ctx, otp_info):
       Executable symlink File owned by the test rule.
     """
     launcher = ctx.actions.declare_file(ctx.label.name + "_erl")
+    sdk = getattr(otp_info, "crypto_sdk", None)
+    target = sdk.execution_exec_wrapper.executable if sdk and sdk.execution_exec_wrapper else otp_info.erlexec
     ctx.actions.symlink(
         output = launcher,
-        target_file = otp_info.erlexec,
+        target_file = target,
         is_executable = True,
     )
     return launcher

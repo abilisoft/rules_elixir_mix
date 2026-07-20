@@ -2,9 +2,8 @@
 -module(fips_runtime_test).
 -export([main/1]).
 
-main([OtpRoot0, Inspector0]) ->
+main([OtpRoot0]) ->
     OtpRoot = filename:absname(OtpRoot0),
-    Inspector = filename:absname(Inspector0),
     ok = application:load(crypto),
     ok = application:set_env(crypto, fips_mode, true),
     {ok, _} = application:ensure_all_started(crypto),
@@ -16,7 +15,7 @@ main([OtpRoot0, Inspector0]) ->
     {ok, _} = application:ensure_all_started(ssl),
     tls_works(),
     no_loadable_crypto_nif(OtpRoot),
-    no_dynamic_crypto_dependencies(OtpRoot, Inspector),
+    no_dynamic_crypto_dependencies(OtpRoot),
     io:format("OTP FIPS runtime verified: ~tp ~tp~n", [crypto:info(), crypto:info_lib()]),
     ok.
 
@@ -68,6 +67,8 @@ prohibited_crypto_fails() ->
     end.
 
 tls_works() ->
+    P256 = {1, 2, 840, 10045, 3, 1, 7},
+    CertificateOptions = [{key, {namedCurve, P256}}, {digest, sha256}],
     ApprovedSuite = #{
         cipher => aes_256_gcm,
         key_exchange => any,
@@ -75,9 +76,9 @@ tls_works() ->
         prf => sha384
     },
     ServerCredentials = public_key:pkix_test_data(#{
-        root => [],
+        root => CertificateOptions,
         intermediates => [],
-        peer => [{key, {rsa, 3072, 65537}}, {digest, sha256}]
+        peer => CertificateOptions
     }),
     CommonOptions = [
         binary,
@@ -121,26 +122,89 @@ no_loadable_crypto_nif(OtpRoot) ->
     [] = filelib:wildcard(Pattern),
     ok.
 
-no_dynamic_crypto_dependencies(OtpRoot, Inspector) ->
+no_dynamic_crypto_dependencies(OtpRoot) ->
     [Beam | _] = filelib:wildcard(filename:join([OtpRoot, "erts-*", "bin", "beam.smp"])),
-    Output = run(Inspector, ["-d", Beam]),
-    false = contains(Output, <<"libcrypto.so">>),
-    false = contains(Output, <<"libssl.so">>),
+    Needed = elf_needed_libraries(Beam),
+    false = lists:any(fun(Name) -> contains(Name, <<"libcrypto.so">>) end, Needed),
+    false = lists:any(fun(Name) -> contains(Name, <<"libssl.so">>) end, Needed),
     ok.
 
-run(Executable, Arguments) ->
-    Port = open_port(
-        {spawn_executable, Executable},
-        [binary, exit_status, stderr_to_stdout, use_stdio, {args, Arguments}]
-    ),
-    await(Port, []).
+elf_needed_libraries(Path) ->
+    {ok, Binary} = file:read_file(Path),
+    <<16#7f, $E, $L, $F, 2, 1, _Ident:10/binary,
+      _Type:16/little-unsigned-integer,
+      _Machine:16/little-unsigned-integer,
+      _Version:32/little-unsigned-integer,
+      _Entry:64/little-unsigned-integer,
+      _ProgramOffset:64/little-unsigned-integer,
+      SectionOffset:64/little-unsigned-integer,
+      _Flags:32/little-unsigned-integer,
+      _HeaderSize:16/little-unsigned-integer,
+      _ProgramEntrySize:16/little-unsigned-integer,
+      _ProgramCount:16/little-unsigned-integer,
+      SectionEntrySize:16/little-unsigned-integer,
+      SectionCount:16/little-unsigned-integer,
+      _SectionNames:16/little-unsigned-integer,
+      _/binary>> = Binary,
+    Sections = [
+        elf_section(Binary, SectionOffset, SectionEntrySize, Index)
+     || Index <- lists:seq(0, SectionCount - 1)
+    ],
+    lists:append([
+        elf_dynamic_libraries(Binary, Section, Sections)
+     || Section <- Sections,
+        maps:get(type, Section) =:= 6
+    ]).
 
-await(Port, Chunks) ->
-    receive
-        {Port, {data, Data}} -> await(Port, [Data | Chunks]);
-        {Port, {exit_status, 0}} -> iolist_to_binary(lists:reverse(Chunks));
-        {Port, {exit_status, Status}} -> erlang:error({inspector_failed, Status, lists:reverse(Chunks)})
-    end.
+elf_section(Binary, SectionOffset, SectionEntrySize, Index) ->
+    Offset = SectionOffset + Index * SectionEntrySize,
+    Header = binary:part(Binary, Offset, SectionEntrySize),
+    <<_Name:32/little-unsigned-integer,
+      Type:32/little-unsigned-integer,
+      _Flags:64/little-unsigned-integer,
+      _Address:64/little-unsigned-integer,
+      FileOffset:64/little-unsigned-integer,
+      Size:64/little-unsigned-integer,
+      Link:32/little-unsigned-integer,
+      _Info:32/little-unsigned-integer,
+      _Alignment:64/little-unsigned-integer,
+      EntrySize:64/little-unsigned-integer,
+      _/binary>> = Header,
+    #{
+        entry_size => EntrySize,
+        link => Link,
+        offset => FileOffset,
+        size => Size,
+        type => Type
+    }.
+
+elf_dynamic_libraries(Binary, Dynamic, Sections) ->
+    StringTable = lists:nth(maps:get(link, Dynamic) + 1, Sections),
+    Strings = binary:part(
+        Binary,
+        maps:get(offset, StringTable),
+        maps:get(size, StringTable)
+    ),
+    Entries = binary:part(Binary, maps:get(offset, Dynamic), maps:get(size, Dynamic)),
+    elf_dynamic_entries(Entries, maps:get(entry_size, Dynamic), Strings, []).
+
+elf_dynamic_entries(_Entries, 0, _Strings, _Acc) ->
+    erlang:error(invalid_elf_dynamic_entry_size);
+elf_dynamic_entries(Entries, EntrySize, Strings, Acc) when byte_size(Entries) >= EntrySize ->
+    <<Entry:EntrySize/binary, Rest/binary>> = Entries,
+    <<Tag:64/little-signed-integer, Value:64/little-unsigned-integer, _/binary>> = Entry,
+    case Tag of
+        0 -> lists:reverse(Acc);
+        1 -> elf_dynamic_entries(Rest, EntrySize, Strings, [elf_string(Strings, Value) | Acc]);
+        _ -> elf_dynamic_entries(Rest, EntrySize, Strings, Acc)
+    end;
+elf_dynamic_entries(<<>>, _EntrySize, _Strings, Acc) ->
+    lists:reverse(Acc).
+
+elf_string(Strings, Offset) ->
+    Tail = binary:part(Strings, Offset, byte_size(Strings) - Offset),
+    [Value | _] = binary:split(Tail, <<0>>),
+    Value.
 
 contains(Haystack, Needle) ->
     binary:match(Haystack, Needle) =/= nomatch.

@@ -4,9 +4,10 @@
 
 -include_lib("kernel/include/file.hrl").
 
-main([ConfigPath]) ->
+main([ConfigPath, ExecutionRoot0]) ->
+    ExecutionRoot = filename:absname(ExecutionRoot0),
     {ok, [Config]} = file:consult(ConfigPath),
-    Output = absolute(maps:get(output, Config)),
+    Output = absolute_build_path(maps:get(output, Config), ExecutionRoot),
     Work = Output ++ ".work",
     Source = filename:join(Work, "source"),
     Tools = filename:join(Work, "tools"),
@@ -14,19 +15,20 @@ main([ConfigPath]) ->
     ok = remove(Output),
     ok = ensure_directory(Source),
     ok = ensure_directory(Tools),
-    copy_sources(maps:get(sources, Config), Source),
+    copy_sources(maps:get(sources, Config), ExecutionRoot, Source),
     ok = bind_upstream_scripts_to_declared_shell(Source),
     Version = maps:get(version, Config),
     {ok, SourceVersion0} = file:read_file(filename:join(Source, "VERSION")),
     Version = string:trim(binary_to_list(SourceVersion0)),
-    Erl = absolute(maps:get(erlexec, Config)),
+    Erl = absolute_build_path(maps:get(erlexec, Config), ExecutionRoot),
     ok = file:make_symlink(Erl, filename:join(Tools, "erl")),
     Environment0 = maps:get(environment, Config),
-    Environment1 = maps:map(fun(_Key, Value) -> expand_path(Value) end, Environment0),
+    Environment1 = maps:map(fun(_Key, Value) -> expand_path(Value, ExecutionRoot) end, Environment0),
     Environment = inherit_crypto_environment(Environment1),
     BuildEnvironment = Environment#{
         "ERL_COMPILER_OPTIONS" => "deterministic",
         "ERL_AFLAGS" => maps:get(erl_aflags, Config),
+        "ERLC_EMULATOR" => filename:join(Tools, "erl"),
         "ELIXIR_ERL_OPTIONS" => "+fnu",
         "HOME" => filename:join(Work, "home"),
         "LANG" => "C",
@@ -40,7 +42,7 @@ main([ConfigPath]) ->
     ok = ensure_directory(maps:get("TMPDIR", BuildEnvironment)),
     Jobs = integer_to_list(maps:get(jobs, Config)),
     MakeShell = "SHELL=" ++ maps:get("SHELL", BuildEnvironment),
-    GenerateApp = "GENERATE_APP=" ++ absolute(maps:get(escript, Config)) ++ " " ++
+    GenerateApp = "GENERATE_APP=" ++ absolute_build_path(maps:get(escript, Config), ExecutionRoot) ++ " " ++
         filename:join([Source, "lib", "elixir", "scripts", "generate_app.escript"]),
     %% Elixir's Makefile defines BINDIR=bin. Because BINDIR also belongs to
     %% erlexec, GNU Make would otherwise export the project value to erlc/erl
@@ -51,13 +53,13 @@ main([ConfigPath]) ->
     %% before stdlib. Calling stdlib directly on a clean tree cannot load
     %% elixir_compiler because lib/elixir/ebin does not exist yet.
     ok = run(
-        maps:get(make, Config),
+        absolute_build_path(maps:get(make, Config), ExecutionRoot),
         [MakeShell, OtpBindir, GenerateApp, "-j" ++ Jobs, "erlang"] ++ maps:get(make_options, Config),
         Source,
         BuildEnvironment
     ),
     ok = run(
-        maps:get(make, Config),
+        absolute_build_path(maps:get(make, Config), ExecutionRoot),
         [MakeShell, OtpBindir, GenerateApp, "-j" ++ Jobs, "stdlib"] ++ maps:get(make_options, Config),
         Source,
         BuildEnvironment
@@ -68,7 +70,7 @@ main([ConfigPath]) ->
         StableSource
     ),
     ok = run(
-        maps:get(make, Config),
+        absolute_build_path(maps:get(make, Config), ExecutionRoot),
         [MakeShell, OtpBindir, GenerateApp, "-j" ++ Jobs] ++ maps:get(make_options, Config),
         Source,
         BuildEnvironment
@@ -85,27 +87,60 @@ main([ConfigPath]) ->
 bind_upstream_scripts_to_declared_shell(Source) ->
     %% Elixir's checked-in launchers use /bin/sh. The action must not borrow
     %% that host path, and a Bazel executable path can exceed the kernel's
-    %% shebang limit. Removing only the shebang from the writable source copy
-    %% makes the declared Bash executing each Make recipe handle the unchanged
-    %% upstream script body after execve returns ENOEXEC.
-    lists:foreach(
-        fun(Relative) ->
-            Path = filename:join(Source, Relative),
-            {ok, <<"#!/bin/sh\n", Body/binary>>} = file:read_file(Path),
-            ok = file:write_file(Path, Body)
-        end,
-        ["bin/elixir", "bin/elixirc"]
+    %% shebang limit. Removing the shebang from the writable source copy makes
+    %% the declared recipe shell handle direct launcher calls after ENOEXEC.
+    Elixir = filename:join(Source, "bin/elixir"),
+    {ok, <<"#!/bin/sh\n", ElixirBody/binary>>} = file:read_file(Elixir),
+    ok = file:write_file(Elixir, ElixirBody),
+    %% elixirc tail-calls bin/elixir with the shell's exec builtin, where an
+    %% ENOEXEC fallback is not portable. Bind that one upstream transition to
+    %% the already-declared SHELL rather than introducing a host /bin/sh read.
+    Elixirc = filename:join(Source, "bin/elixirc"),
+    {ok, <<"#!/bin/sh\n", ElixircBody0/binary>>} = file:read_file(Elixirc),
+    UpstreamExec = <<"exec \"$SCRIPT_PATH\"/elixir +elixirc \"$@\"">>,
+    DeclaredExec = <<"exec \"$SHELL\" \"$SCRIPT_PATH\"/elixir +elixirc \"$@\"">>,
+    [_, _] = binary:split(ElixircBody0, UpstreamExec),
+    ElixircBody = binary:replace(ElixircBody0, UpstreamExec, DeclaredExec),
+    ok = file:write_file(Elixirc, ElixircBody),
+    %% BusyBox ash is allowed to reject ENOEXEC fallback entirely. Make the
+    %% upstream compile recipes explicit about the declared shell as well. The
+    %% replacements only adapt launcher transitions; Elixir/Erlang sources and
+    %% compiler arguments stay unchanged.
+    Makefile = filename:join(Source, "Makefile"),
+    {ok, MakefileBody0} = file:read_file(Makefile),
+    MakefileBody = lists:foldl(
+        fun({From, To}, Body) -> replace_required(Body, From, To) end,
+        MakefileBody0,
+        [
+            {<<"../../$$(ELIXIRC)">>, <<"$$(SHELL) ../../$$(ELIXIRC)">>},
+            {<<"../../$(ELIXIRC_MIN_SIG)">>, <<"$(SHELL) ../../$(ELIXIRC_MIN_SIG)">>},
+            {<<"$(Q) $(ELIXIRC_MIN_SIG) lib/elixir/unicode/">>, <<"$(Q) $(SHELL) $(ELIXIRC_MIN_SIG) lib/elixir/unicode/">>},
+            {<<"$(Q) cd lib/$(1) && ../../bin/elixir -e">>, <<"$(Q) cd lib/$(1) && $$(SHELL) ../../bin/elixir -e">>},
+            {<<"$(Q) bin/elixir lib/elixir/scripts/infer.exs;">>, <<"$(Q) $(SHELL) bin/elixir lib/elixir/scripts/infer.exs;">>}
+        ]
     ),
+    ok = file:write_file(Makefile, MakefileBody),
     ok.
+
+replace_required(Body, From, To) ->
+    case binary:match(Body, From) of
+        nomatch -> erlang:error({unsupported_elixir_makefile, From});
+        _ -> binary:replace(Body, From, To, [global])
+    end.
 
 absolute(Path) ->
     filename:absname(Path).
 
-expand_path({path, Path}) ->
-    absolute(Path);
-expand_path({path_list, Paths}) ->
-    string:join([absolute(Path) || Path <- Paths], ":");
-expand_path(Value) ->
+absolute_build_path(Path, _ExecutionRoot) when hd(Path) =:= $/ ->
+    Path;
+absolute_build_path(Path, ExecutionRoot) ->
+    filename:absname(filename:join(ExecutionRoot, Path)).
+
+expand_path({path, Path}, ExecutionRoot) ->
+    absolute_build_path(Path, ExecutionRoot);
+expand_path({path_list, Paths}, ExecutionRoot) ->
+    string:join([absolute_build_path(Path, ExecutionRoot) || Path <- Paths], ":");
+expand_path(Value, _ExecutionRoot) ->
     Value.
 
 inherit_crypto_environment(Environment) ->
@@ -145,9 +180,11 @@ verify_runtime(Output, Version, OtpRelease) ->
     VersionBinary = 'Elixir.System':version(),
     ok.
 
-copy_sources(Sources, Destination) ->
+copy_sources(Sources, ExecutionRoot, Destination) ->
     lists:foreach(
-        fun({Source, Relative}) -> copy_entry(absolute(Source), filename:join(Destination, Relative)) end,
+        fun({Source, Relative}) ->
+            copy_entry(absolute_build_path(Source, ExecutionRoot), filename:join(Destination, Relative))
+        end,
         Sources
     ).
 

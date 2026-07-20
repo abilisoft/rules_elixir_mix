@@ -52,6 +52,7 @@ beam.source_toolchain(
     bootstrap_otp_url = "https://artifacts.example/otp-bootstrap.tar.gz",
     bootstrap_otp_sha256 = "<64-hex-sha256>",
     bootstrap_erlexec = "erts-17.0.3/bin/erlexec",
+    bootstrap_launcher = "@native_platform//:hermetic_exec",
     bash = "@native_platform//:bash",
     make = "@native_platform//:make",
     perl = "@native_platform//:perl",

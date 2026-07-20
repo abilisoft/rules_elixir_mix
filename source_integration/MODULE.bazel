@@ -5,34 +5,11 @@ module(
 )
 
 bazel_dep(name = "platforms", version = "1.1.0")
-bazel_dep(name = "rules_elixir_mix", version = "0.1.0")
+bazel_dep(name = "rules_elixir_mix", version = "0.2.0")
+bazel_dep(name = "rules_fips", version = "0.2.0")
 local_path_override(
     module_name = "rules_elixir_mix",
     path = "..",
-)
-
-new_local_repository = use_repo_rule(
-    "@bazel_tools//tools/build_defs/repo:local.bzl",
-    "new_local_repository",
-)
-
-new_local_repository(
-    name = "source_tools",
-    build_file_content = """
-package(default_visibility = ["//visibility:public"])
-exports_files(["bash", "make", "perl"])
-filegroup(
-    name = "posix_tools",
-    srcs = [
-        "awk", "basename", "cat", "chmod", "cmp", "cp", "cut", "date",
-        "dd", "dirname", "expr", "find", "getconf", "grep", "head",
-        "install", "ln", "mkdir", "mv", "printf", "pwd", "readlink",
-        "realpath", "rm", "sed", "sort", "tail", "touch", "tr", "uname",
-        "wc", "xargs",
-    ],
-)
-""",
-    path = "/usr/bin",
 )
 
 elixir_config = use_extension(
@@ -41,7 +18,8 @@ elixir_config = use_extension(
 )
 elixir_config.source_toolchain(
     name = "catalog_source_x86_64",
-    bash = "@source_tools//:bash",
+    bash = "@rules_fips//fips/toolchains:source_shell",
+    bootstrap_launcher = "@rules_fips//fips/toolchains:hermetic_exec",
     bootstrap_erlexec = "erts-17.0.3/bin/erlexec",
     bootstrap_otp_sha256 = "a636ad0585b0fe85a5dfa165ba23a9c81a67cadfdd6e2a732a1cc50c51766bcf",
     bootstrap_otp_type = "tar.gz",
@@ -56,45 +34,59 @@ elixir_config.source_toolchain(
         "--without-termcap",
         "--without-wx",
     ],
+    crypto_sdk = "//:openssl_fips_crypto_sdk",
     default = True,
     exec_compatible_with = [
         "@platforms//cpu:x86_64",
         "@platforms//os:linux",
     ],
     jobs = 8,
-    make = "@source_tools//:make",
+    fips = "required",
+    make = "@rules_fips//fips/toolchains:hermetic_make",
     make_options = ["SKIP_APPLICATIONS=wx debugger observer et reltool"],
-    perl = "@source_tools//:perl",
-    posix_tools = ["@source_tools//:posix_tools"],
-    runtime_abi = "//:source_runtime_abi_x86_64",
+    perl = "@rules_fips//fips/toolchains:foreign_perl",
+    posix_tools = ["@rules_fips//fips/toolchains:posix_tools"],
+    runtime_abi = "@rules_fips//fips/platforms:openssl_fips_musl_amd64",
+    static_crypto_nif = True,
 )
 elixir_config.source_toolchain(
     name = "catalog_source_arm64",
-    bash = "@source_tools//:bash",
+    bash = "@rules_fips//fips/toolchains:source_shell",
+    bootstrap_launcher = "@rules_fips//fips/toolchains:hermetic_exec",
     bootstrap_erlexec = "erts-17.0.3/bin/erlexec",
-    bootstrap_otp_sha256 = "0eb1e99573b630cbbc9c7ee1e6126b083556374f9582e6874f70bfa650231fd6",
+    bootstrap_exec_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    bootstrap_otp_sha256 = "a636ad0585b0fe85a5dfa165ba23a9c81a67cadfdd6e2a732a1cc50c51766bcf",
     bootstrap_otp_type = "tar.gz",
-    bootstrap_otp_url = "file:///tmp/rules-elixir-mix-ci-otp-bootstrap-arm64.tar.gz",
+    bootstrap_otp_url = "file:///tmp/rules-elixir-mix-ci-otp-bootstrap-x86_64.tar.gz",
     bootstrap_otp_version = "29.0.3",
     bootstrap_version_marker = "releases/29/OTP_VERSION",
     configure_options = [
+        "--build=x86_64-pc-linux-gnu",
         "--disable-pgo",
         "--disable-sctp",
+        "--host=aarch64-unknown-linux-musl",
         "--without-javac",
         "--without-odbc",
         "--without-termcap",
         "--without-wx",
     ],
+    crypto_sdk = "//:openssl_fips_crypto_sdk",
+    cross_compile = True,
     exec_compatible_with = [
         "@platforms//cpu:arm64",
         "@platforms//os:linux",
     ],
     jobs = 8,
-    make = "@source_tools//:make",
+    fips = "required",
+    make = "@rules_fips//fips/toolchains:hermetic_make",
     make_options = ["SKIP_APPLICATIONS=wx debugger observer et reltool"],
-    perl = "@source_tools//:perl",
-    posix_tools = ["@source_tools//:posix_tools"],
-    runtime_abi = "//:source_runtime_abi_arm64",
+    perl = "@rules_fips//fips/toolchains:foreign_perl",
+    posix_tools = ["@rules_fips//fips/toolchains:posix_tools"],
+    runtime_abi = "@rules_fips//fips/platforms:openssl_fips_musl_arm64",
+    static_crypto_nif = True,
 )
 use_repo(elixir_config, "elixir_config")
 
