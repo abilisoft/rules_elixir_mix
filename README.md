@@ -7,14 +7,14 @@ SPDX-License-Identifier: Apache-2.0
 
 [![CI](https://github.com/abilisoft/rules_elixir_mix/actions/workflows/test.yaml/badge.svg)](https://github.com/abilisoft/rules_elixir_mix/actions/workflows/test.yaml)
 [![CodeQL](https://github.com/abilisoft/rules_elixir_mix/actions/workflows/codeql.yml/badge.svg)](https://github.com/abilisoft/rules_elixir_mix/actions/workflows/codeql.yml)
-[![OpenSSF Scorecard](https://github.com/abilisoft/rules_elixir_mix/actions/workflows/scorecard.yml/badge.svg)](https://securityscorecards.dev/viewer/?uri=github.com/abilisoft/rules_elixir_mix)
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/abilisoft/rules_elixir_mix/badge)](https://securityscorecards.dev/viewer/?uri=github.com/abilisoft/rules_elixir_mix)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
 Hermetic, Mix-first Bazel rules for Elixir and Erlang/OTP applications,
 including Phoenix, LiveView, ExUnit, analysis, and releases.
 
 > [!IMPORTANT]
-> [`v0.2.0`](https://github.com/abilisoft/rules_elixir_mix/releases/tag/v0.2.0)
+> [`v0.2.1`](https://github.com/abilisoft/rules_elixir_mix/releases/tag/v0.2.1)
 > is available as a signed GitHub release but is intentionally not published to
 > the Bazel Central Registry yet. Pin its verified commit directly as shown in
 > [Getting started](docs/getting_started.md#1-pin-the-ruleset). Source builds
