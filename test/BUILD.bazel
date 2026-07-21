@@ -57,7 +57,7 @@ filegroup(
 )
 
 otp_prebuilt_release(
-    name = "otp",
+    name = "otp_x86_64",
     srcs = [":otp_files"],
     erlexec = "runtime/otp/erts-17.0.3/bin/erlexec",
     exec_compatible_with = [
@@ -67,6 +67,27 @@ otp_prebuilt_release(
     fully_static = True,
     version = "29.0.3",
     version_marker = "runtime/otp/releases/29/OTP_VERSION",
+)
+
+otp_prebuilt_release(
+    name = "otp_arm64",
+    srcs = [":otp_files"],
+    erlexec = "runtime/otp/erts-17.0.3/bin/erlexec",
+    exec_compatible_with = [
+        "@platforms//cpu:arm64",
+        "@platforms//os:linux",
+    ],
+    fully_static = True,
+    version = "29.0.3",
+    version_marker = "runtime/otp/releases/29/OTP_VERSION",
+)
+
+alias(
+    name = "otp",
+    actual = select({
+        "@platforms//cpu:arm64": ":otp_arm64",
+        "@platforms//cpu:x86_64": ":otp_x86_64",
+    }),
 )
 
 otp_runtime_closure_analysis_check(
@@ -236,7 +257,7 @@ otp_crypto_sdk(
 )
 
 otp_prebuilt_release(
-    name = "otp_fips_provider",
+    name = "otp_fips_provider_x86_64",
     srcs = [":otp_files"],
     crypto_sdk = ":provider_crypto_sdk",
     erlexec = "runtime/otp/erts-17.0.3/bin/erlexec",
@@ -249,6 +270,30 @@ otp_prebuilt_release(
     static_crypto_nif = True,
     version = "29.0.3",
     version_marker = "runtime/otp/releases/29/OTP_VERSION",
+)
+
+otp_prebuilt_release(
+    name = "otp_fips_provider_arm64",
+    srcs = [":otp_files"],
+    crypto_sdk = ":provider_crypto_sdk",
+    erlexec = "runtime/otp/erts-17.0.3/bin/erlexec",
+    exec_compatible_with = [
+        "@platforms//cpu:arm64",
+        "@platforms//os:linux",
+    ],
+    fips = "required",
+    runtime_wrapped = True,
+    static_crypto_nif = True,
+    version = "29.0.3",
+    version_marker = "runtime/otp/releases/29/OTP_VERSION",
+)
+
+alias(
+    name = "otp_fips_provider",
+    actual = select({
+        "@platforms//cpu:arm64": ":otp_fips_provider_arm64",
+        "@platforms//cpu:x86_64": ":otp_fips_provider_x86_64",
+    }),
 )
 
 elixir_prebuilt_release(
