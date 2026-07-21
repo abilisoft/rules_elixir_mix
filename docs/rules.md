@@ -45,6 +45,8 @@ Load public APIs from `@rules_elixir_mix//:defs.bzl`. Module extensions live in
 | `mix_lcov_test` | ExCoveralls LCOV through Bazel's coverage protocol |
 | `mix_ecto_test` | ExUnit with a fresh declared Postgres cluster |
 | `mix_wallaby_test` | ExUnit/Wallaby with declared Chrome and ChromeDriver |
+| `otp_runtime_smoke_test` | Start a declared OTP runtime and validate its version/JIT contract |
+| `otp_runtime_rejection_test` | Prove that an incompatible declared OTP runtime fails at the expected ABI boundary |
 
 ## Phoenix, releases, and local development
 
