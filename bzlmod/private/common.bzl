@@ -8,12 +8,16 @@ load("@rules_elixir_mix//:defs.bzl", "mix_library")
 mix_library(
     name = "{app_name}",
     app_name = "{app_name}",
+    hex_package = {package},
+    hex_package_repository = {repository},
+    hex_package_sha256 = {sha256},
+    hex_package_version = {version},
 {testonly_attr}    deps = {explicit_deps_str},
     compile_deps = {compile_deps_str},
     hex = "@hex_pm//:lib",
     priv = glob([
         "priv/**/*",
-    ], allow_empty = True),
+    ], allow_empty = True) + {precompiled_native_files_str},
     config = glob([
         "config/**/*.ex",
         "config/**/*.exs",
@@ -52,6 +56,10 @@ load("@rules_elixir_mix//:defs.bzl", "rebar_library")
 rebar_library(
     name = "{app_name}",
     app_name = "{app_name}",
+    hex_package = {package},
+    hex_package_repository = {repository},
+    hex_package_sha256 = {sha256},
+    hex_package_version = {version},
     deps = {explicit_deps_str},
     compile_deps = {compile_deps_str},
     priv = glob(["priv/**/*"], allow_empty = True),
@@ -64,16 +72,21 @@ rebar_library(
 )
 """
 
-def package_build_file_content(app_name, manager, explicit_deps_str, compile_deps_str = "[]", native_build = False, precompiled_native_artifacts_str = "[]", testonly_attr = ""):
+def package_build_file_content(app_name, manager, explicit_deps_str, package, repository, sha256, version, compile_deps_str = "[]", native_build = False, precompiled_native_artifacts_str = "[]", precompiled_native_files_str = "[]", testonly_attr = ""):
     """Render a generated Hex package BUILD file for its declared manager.
 
     Args:
       app_name: OTP application name.
       manager: Mix lock manager atom, either `mix` or `rebar3`.
       explicit_deps_str: Rendered Bazel dependency-label list.
+      package: Hex package name.
+      repository: Hex repository identifier.
+      sha256: Checksum-pinned Hex archive digest.
+      version: Hex package version.
       compile_deps_str: Rendered compile-only dependency-label list.
       native_build: Whether the package may invoke a native source compiler.
       precompiled_native_artifacts_str: Rendered checksum-pinned native archive labels.
+      precompiled_native_files_str: Rendered validated native files copied directly into priv.
       testonly_attr: Optional generated testonly attribute for Mix packages.
 
     Returns:
@@ -85,14 +98,23 @@ def package_build_file_content(app_name, manager, explicit_deps_str, compile_dep
             compile_deps_str = compile_deps_str,
             explicit_deps_str = explicit_deps_str,
             native_build = repr(native_build),
+            package = repr(package),
             precompiled_native_artifacts_str = precompiled_native_artifacts_str,
+            precompiled_native_files_str = precompiled_native_files_str,
+            repository = repr(repository),
+            sha256 = repr(sha256),
             testonly_attr = testonly_attr,
+            version = repr(version),
         )
     if manager == "rebar3":
         return REBAR_BUILD_FILE_CONTENT.format(
             app_name = app_name,
             compile_deps_str = compile_deps_str,
             explicit_deps_str = explicit_deps_str,
+            package = repr(package),
+            repository = repr(repository),
+            sha256 = repr(sha256),
+            version = repr(version),
         )
     fail("unsupported Hex build manager '{}' for {}".format(manager, app_name))
 

@@ -1,6 +1,7 @@
 """Shell-free Rebar3 compilation for Erlang Hex applications."""
 
-load("//private:beam_info.bzl", "ErlangAppInfo", "compile_depset", "erl_env_flags", "execution_erlexec", "execution_erts_bin", "fips_erl_args", "flat_compile_deps", "otp_runtime_env", "path_join", "prepare_crypto_runtime", "runtime_depset", "type_depset")
+load("//private:beam_info.bzl", "ErlangAppInfo", "compile_depset", "erl_env_flags", "execution_erlexec", "execution_erts_bin", "fips_erl_args", "flat_compile_deps", "otp_runtime_env", "otp_runtime_erl_args", "path_join", "prepare_crypto_runtime", "runtime_depset", "type_depset")
+load("//private:hex_package_info.bzl", "HEX_PACKAGE_ATTRS", "hex_package_info")
 
 _RebarCompileInfo = provider(
     doc = "Internal result of a Rebar3 compile action.",
@@ -270,7 +271,9 @@ def _rebar_compile_impl(ctx):
         "RULES_ELIXIR_MIX_PROJECT_FINGERPRINT": project_fingerprint.path,
         "RULES_ELIXIR_MIX_ESCRIPT": path_join(execution_erts_bin(toolchain.otpinfo), "escript"),
         "RULES_ELIXIR_MIX_REBAR_ERL_AFLAGS": erl_env_flags(
-            ["+fnu"] + (["-crypto", "fips_mode", "true"] if toolchain.otpinfo.fips == "required" else []),
+            otp_runtime_erl_args(toolchain.otpinfo) +
+            ["+fnu"] +
+            (["-crypto", "fips_mode", "true"] if toolchain.otpinfo.fips == "required" else []),
         ),
         "RULES_ELIXIR_MIX_REBAR3": ctx.file.rebar3.path,
         "RULES_ELIXIR_MIX_REBAR_CONFIG": ctx.file.rebar_config.path,
@@ -331,7 +334,7 @@ def _rebar_library_info_impl(ctx):
     project_files = ctx.files.srcs + ctx.files.priv + ctx.files.include + [ctx.file.rebar_config]
     project_entries = _project_entries(ctx, project_files)
 
-    return [
+    providers = [
         DefaultInfo(files = depset(roots), runfiles = runfiles),
         ErlangAppInfo(
             app_name = ctx.attr.app_name,
@@ -360,6 +363,10 @@ def _rebar_library_info_impl(ctx):
             srcs = ctx.files.srcs,
         ),
     ]
+    package = hex_package_info(ctx, ctx.attr.app_name, project_entries, project_files)
+    if package:
+        providers.append(package)
+    return providers
 
 _rebar_library_info = rule(
     implementation = _rebar_library_info_impl,
@@ -373,7 +380,7 @@ _rebar_library_info = rule(
         "runtime_deps": attr.label_list(providers = [ErlangAppInfo]),
         "type_deps": attr.label_list(providers = [ErlangAppInfo]),
         "rebar_config": attr.label(mandatory = True, allow_single_file = True),
-    },
+    } | HEX_PACKAGE_ATTRS,
 )
 
 def _rebar_library_impl(name, visibility, deps, **kwargs):
@@ -406,6 +413,10 @@ def _rebar_library_impl(name, visibility, deps, **kwargs):
         app_name = kwargs["app_name"],
         compile = ":" + name + "_compile",
         compile_deps = kwargs["compile_deps"],
+        hex_package = kwargs["hex_package"],
+        hex_package_repository = kwargs["hex_package_repository"],
+        hex_package_sha256 = kwargs["hex_package_sha256"],
+        hex_package_version = kwargs["hex_package_version"],
         include = kwargs["include"],
         priv = kwargs["priv"],
         rebar_config = kwargs["rebar_config"],
@@ -427,6 +438,6 @@ rebar_library = macro(
         "runtime_deps": attr.label_list(providers = [ErlangAppInfo], configurable = False),
         "type_deps": attr.label_list(providers = [ErlangAppInfo], configurable = False),
         "tags": attr.string_list(configurable = False),
-    },
+    } | HEX_PACKAGE_ATTRS,
     implementation = _rebar_library_impl,
 )

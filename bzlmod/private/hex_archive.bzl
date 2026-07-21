@@ -1,5 +1,6 @@
 """Hermetic repository rule for checksum-pinned Hex packages."""
 
+load("//:repository_integrity.bzl", "validate_extracted_tree")
 load(":hex_pm.bzl", "hex_archive_url")
 
 def _strip_level(patch_args):
@@ -23,6 +24,7 @@ def _hex_archive_impl(repository_ctx):
     )
     repository_ctx.extract("hex-package.tar")
     repository_ctx.extract("contents.tar.gz")
+    validate_extracted_tree(repository_ctx)
     repository_ctx.delete("hex-package.tar")
     repository_ctx.delete("contents.tar.gz")
 

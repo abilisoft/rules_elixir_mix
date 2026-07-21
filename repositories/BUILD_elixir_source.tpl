@@ -5,25 +5,25 @@ load(
     "elixir_source_release",
     "elixir_toolchain",
     "otp_prebuilt_release",
+    "otp_runtime_smoke_test",
     "otp_source_release",
     "otp_toolchain",
 )
 
-otp_prebuilt_release(
-    name = "bootstrap_otp",
-    erlexec = "%{BOOTSTRAP_ERLEXEC}",
-    srcs = ["%{BOOTSTRAP_RUNTIME}"],
-    version = "%{BOOTSTRAP_OTP_VERSION}",
-    version_marker = "%{BOOTSTRAP_VERSION_MARKER}",
-    exec_compatible_with = [
+%{BOOTSTRAP_DECLARATION}
+
+otp_runtime_smoke_test(
+    name = "bootstrap_smoke_test",
+    otp = %{BOOTSTRAP_OTP},
+    tags = ["block-network"],
+    target_compatible_with = [
 %{BOOTSTRAP_EXEC_CONSTRAINTS}    ],
 )
 
 otp_source_release(
     name = "otp",
     bash = "%{BASH}",
-    bootstrap_launcher = "%{BOOTSTRAP_LAUNCHER}",
-    bootstrap_otp = ":bootstrap_otp",
+    bootstrap_otp = %{BOOTSTRAP_OTP},
     configure_options = [
 %{CONFIGURE_OPTIONS}    ],
     copts = [
@@ -33,11 +33,14 @@ otp_source_release(
     cxxopts = [
 %{CXXOPTS}    ],
     jobs = %{JOBS},
+    jit = "%{JIT}",
+    libc = "%{LIBC}",
     linkopts = [
 %{LINKOPTS}    ],
     make = "%{MAKE}",
     make_options = [
 %{MAKE_OPTIONS}    ],
+    otp_fully_static = %{OTP_FULLY_STATIC},
     perl = %{PERL},
     posix_tools = [
 %{POSIX_TOOLS}    ],
@@ -45,6 +48,7 @@ otp_source_release(
     srcs = ["%{OTP_SOURCES}"],
     fips = "%{FIPS}",
     static_crypto_nif = %{STATIC_CRYPTO_NIF},
+    target_arch = "%{TARGET_ARCH}",
     version = "%{OTP_VERSION}",
     exec_compatible_with = [
 %{EXEC_CONSTRAINTS}    ],
@@ -105,4 +109,19 @@ toolchain(
 %{TARGET_CONSTRAINTS}    ],
     toolchain = ":elixir",
     toolchain_type = "@rules_elixir_mix//:toolchain_type",
+)
+
+# The runtime wrapper carries the target loader and libraries in runfiles, so
+# tests execute on the build-host OS/CPU while retaining the runtime ABI as a
+# target constraint. This avoids falsely advertising a target libc on the
+# execution platform under Bazel's default test-toolchain contract.
+toolchain(
+    name = "test_toolchain",
+    exec_compatible_with = [
+%{EXEC_CONSTRAINTS}    ],
+    target_compatible_with = [
+        "//:runtime_%{NAME}",
+%{TARGET_CONSTRAINTS}    ],
+    toolchain = "@bazel_tools//tools/test:empty_toolchain",
+    toolchain_type = "@bazel_tools//tools/test:default_test_toolchain_type",
 )

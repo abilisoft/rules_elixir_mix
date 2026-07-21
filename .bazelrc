@@ -1,3 +1,9 @@
+common --enable_bzlmod
+common --lockfile_mode=error
+common --noexperimental_collect_system_network_usage
+common --remote_default_exec_properties=container-image=docker://gcr.io/flame-public/buildbuddy-ci-runner@sha256:8cf614fc4695789bea8321446402e7d6f84f6be09b8d39ec93caa508fa3e3cfc
+common --remote_default_exec_properties=dockerNetwork=off
+
 build --incompatible_strict_action_env
 build --sandbox_default_allow_network=false
 
@@ -8,5 +14,11 @@ build --bes_backend=grpcs://abilisoft.buildbuddy.io
 common --remote_cache=grpcs://abilisoft.buildbuddy.io
 common --remote_timeout=10m
 common --remote_executor=grpcs://abilisoft.buildbuddy.io
+
+# Opt out explicitly when verifying without uploading action inputs.
+common:local --remote_cache=
+common:local --remote_executor=
+common:local --bes_backend=
+common:local --bes_results_url=
 
 try-import %workspace%/user.bazelrc

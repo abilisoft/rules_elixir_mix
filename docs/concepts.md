@@ -101,10 +101,11 @@ Some developer experiences fundamentally require a writable workspace:
 - ElixirLS;
 - iterative local Mix tasks.
 
-`mix_local`, `mix_phx_server`, `mix_iex`, and `elixir_ls` make that exception
-explicit as `bazel run` targets. They use the selected hermetic runtime and
-fingerprinted dependency graph but maintain mutable state below
-`.bazel/elixir_mix`. They are not build inputs and are not remote actions.
+`mix_local`, `mix_phx_server`, `mix_iex`, `elixir_ls`, and the explicitly
+online `mix_deps_update` make that exception visible as `bazel run` targets.
+They use the selected hermetic runtime and fingerprinted dependency graph but
+maintain mutable state below `.bazel/elixir_mix`. They are not build inputs and
+are not remote actions. Only `mix_deps_update` sets `HEX_OFFLINE=false`.
 
 ## Native code and FIPS ownership
 

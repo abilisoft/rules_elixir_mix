@@ -3,7 +3,7 @@
 load("@rules_cc//cc:action_names.bzl", "CPP_COMPILE_ACTION_NAME", "CPP_LINK_DYNAMIC_LIBRARY_ACTION_NAME", "CPP_LINK_EXECUTABLE_ACTION_NAME", "CPP_LINK_STATIC_LIBRARY_ACTION_NAME", "C_COMPILE_ACTION_NAME", "STRIP_ACTION_NAME")
 load("@rules_cc//cc:find_cc_toolchain.bzl", "CC_TOOLCHAIN_TYPE", "use_cc_toolchain")
 load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
-load("//private:beam_info.bzl", "OtpInfo", "execution_erlexec", "otp_runtime_env")
+load("//private:beam_info.bzl", "OtpInfo", "erl_env_flags", "execution_erlexec", "execution_erlexec_file", "execution_erts_bin", "fips_erl_args", "otp_runtime_env", "otp_runtime_erl_args")
 load("//private:otp_crypto_sdk.bzl", "crypto_sdk_info")
 load("//private:runtime_archive_info.bzl", "BeamRuntimeSourceInfo")
 
@@ -67,13 +67,6 @@ def _path_directories(paths):
 def _term_list(values):
     return "[{}]".format(", ".join([_erl_string(value) for value in values]))
 
-def _dedupe(values):
-    result = []
-    for value in values:
-        if value not in result:
-            result.append(value)
-    return result
-
 def _cc_toolchain(ctx):
     toolchain = ctx.exec_groups[_OTP_BUILD_EXEC_GROUP].toolchains[CC_TOOLCHAIN_TYPE]
     if hasattr(toolchain, "cc_provider_in_toolchain") and hasattr(toolchain, "cc"):
@@ -105,9 +98,11 @@ def _validate_configure_options(options):
     owned = [
         "--disable-dynamic-ssl-lib",
         "--disable-fips",
+        "--disable-jit",
         "--disable-static-nifs",
         "--enable-dynamic-ssl-lib",
         "--enable-fips",
+        "--enable-jit",
         "--enable-static-nifs",
         "--with-ssl",
         "--without-ssl",
@@ -115,7 +110,7 @@ def _validate_configure_options(options):
     for option in options:
         name = option.split("=", 1)[0]
         if name.startswith("--prefix") or name in owned:
-            fail("otp_source_release owns prefix and crypto configure policy; remove '{}'".format(option))
+            fail("otp_source_release owns prefix, JIT, and crypto configure policy; remove '{}'".format(option))
 
 def _validate_make_options(options):
     owned_variables = [
@@ -176,7 +171,7 @@ def _compile_configuration(cc_toolchain, feature_configuration, action_name, use
             feature_configuration = feature_configuration,
             variables = variables,
         ),
-        flags = _dedupe(flags + user_flags),
+        flags = flags + user_flags,
     )
 
 def _link_configuration(cc_toolchain, feature_configuration, action_name, dynamic, user_flags):
@@ -198,7 +193,7 @@ def _link_configuration(cc_toolchain, feature_configuration, action_name, dynami
             feature_configuration = feature_configuration,
             variables = variables,
         ),
-        flags = _dedupe(flags + user_flags),
+        flags = flags + user_flags,
     )
 
 def _dynamic_runtime_library_path_flag(cc_toolchain, feature_configuration):
@@ -272,7 +267,7 @@ def _action_flags_without_io(flags, markers):
                 result.pop()
             continue
         result.append(flag)
-    return _dedupe(result)
+    return result
 
 def _partition_link_flags(flags):
     """Separate pre-object linker options from ordered post-object libraries."""
@@ -295,10 +290,32 @@ def _partition_link_flags(flags):
         libraries.extend(state_group)
     return options, libraries
 
+def _partition_driver_flags(flags):
+    """Move compiler-driver mode selection from Autoconf flag variables."""
+    driver_flags = []
+    other_flags = []
+    for flag in flags:
+        if flag.startswith("--driver-mode=") or flag.startswith("-stdlib="):
+            driver_flags.append(flag)
+        else:
+            other_flags.append(flag)
+    return driver_flags, other_flags
+
 def _otp_source_release_impl(ctx):
     if ctx.attr.jobs < 1 or ctx.attr.jobs > 64:
         fail("otp_source_release jobs must be between 1 and 64")
+    if ctx.attr.libc == "musl" and ctx.attr.target_arch == "amd64" and ctx.attr.jit != "disabled":
+        fail(
+            "x86-64 musl OTP source builds require jit='disabled'; " +
+            "the non-JIT profile is independent of the host AT_MINSIGSTKSZ value",
+        )
     crypto = crypto_sdk_info(ctx.attr.crypto_sdk)
+    has_runtime_wrapper = bool(crypto and crypto.execution_wrapper and crypto.execution_exec_wrapper)
+    if ctx.attr.otp_fully_static == has_runtime_wrapper:
+        fail(
+            "otp_source_release requires exactly one native runtime contract: " +
+            "otp_fully_static=True or a crypto SDK with target and execution wrappers",
+        )
     if ctx.attr.static_crypto_nif and not crypto:
         fail("static_crypto_nif requires a crypto sysroot")
     if ctx.attr.fips == "required":
@@ -309,10 +326,11 @@ def _otp_source_release_impl(ctx):
         if not ctx.attr.static_crypto_nif:
             fail("FIPS-required OTP requires static_crypto_nif=True")
     cc_toolchain = _cc_toolchain(ctx)
+    requested_features = ctx.features + (crypto.cc_features if crypto else [])
     feature_configuration = cc_common.configure_features(
         ctx = ctx,
         cc_toolchain = cc_toolchain,
-        requested_features = ctx.features,
+        requested_features = requested_features,
         unsupported_features = ctx.disabled_features,
     )
     compiler = _tool_path(feature_configuration, C_COMPILE_ACTION_NAME)
@@ -352,9 +370,20 @@ def _otp_source_release_impl(ctx):
     archive = _archive_configuration(cc_toolchain, feature_configuration)
     strip_configuration = _strip_configuration(cc_toolchain, feature_configuration)
     cflags = c_compile.flags
-    cxxflags = cxx_compile.flags
-    executable_ldflags, executable_libraries = _partition_link_flags(executable_link.flags)
-    dynamic_ldflags, dynamic_libraries = _partition_link_flags(dynamic_link.flags)
+    cxx_driver_flags, cxxflags = _partition_driver_flags(cxx_compile.flags)
+    executable_link_driver_flags, executable_link_flags = _partition_driver_flags(executable_link.flags)
+    dynamic_link_driver_flags, dynamic_link_flags = _partition_driver_flags(dynamic_link.flags)
+    if executable_link_driver_flags != cxx_driver_flags or dynamic_link_driver_flags != cxx_driver_flags:
+        fail(
+            "C/C++ toolchain must expose one consistent C++ driver policy for compile and link actions: " +
+            "compile={}, executable link={}, dynamic link={}".format(
+                cxx_driver_flags,
+                executable_link_driver_flags,
+                dynamic_link_driver_flags,
+            ),
+        )
+    executable_ldflags, executable_libraries = _partition_link_flags(executable_link_flags)
+    dynamic_ldflags, dynamic_libraries = _partition_link_flags(dynamic_link_flags)
 
     install = ctx.actions.declare_directory(ctx.label.name + "_runtime")
     erts_bin = ctx.actions.declare_directory(ctx.label.name + "_erts_bin")
@@ -363,8 +392,8 @@ def _otp_source_release_impl(ctx):
     version_file = ctx.actions.declare_file(ctx.label.name + "_version")
     ctx.actions.write(version_file, ctx.attr.version + "\n")
 
-    configure_options = ctx.attr.configure_options
-    _validate_configure_options(configure_options)
+    _validate_configure_options(ctx.attr.configure_options)
+    configure_options = ((["--disable-jit"] if ctx.attr.jit == "disabled" else ["--enable-jit"]) if ctx.attr.jit != "auto" else []) + ctx.attr.configure_options
     if ctx.attr.cross_compile and not any([option.startswith("--host=") for option in configure_options]):
         fail("cross_compile=True requires an explicit --host=<target-triplet> configure option")
     _validate_make_options(ctx.attr.make_options)
@@ -429,14 +458,27 @@ def _otp_source_release_impl(ctx):
     ]))
 
     bootstrap = ctx.attr.bootstrap_otp[OtpInfo]
+    bootstrap_launcher = execution_erlexec_file(bootstrap)
+    bootstrap_environment = otp_runtime_env(bootstrap)
+    bootstrap_environment["ERL_AFLAGS"] = erl_env_flags(
+        otp_runtime_erl_args(bootstrap) +
+        fips_erl_args(bootstrap, activate = False),
+    )
+    bootstrap_environment_term = "#{{{}}}".format(", ".join([
+        "{} => {}".format(_erl_string(key), _erl_string(bootstrap_environment[key]))
+        for key in sorted(bootstrap_environment.keys())
+    ]))
+    bootstrap_erts_bin = execution_erts_bin(bootstrap)
     config = ctx.actions.declare_file(ctx.label.name + "_build.config")
     config_content = "#{\n" + ",\n".join([
         "  bash => {}".format(_erl_string(ctx.executable.bash.path)),
+        "  bootstrap_environment => {}".format(bootstrap_environment_term),
         "  bootstrap_erlexec => {}".format(_erl_string(bootstrap.erlexec.path)),
-        "  bootstrap_erts_bin => {}".format(_erl_string(bootstrap.erts_bin)),
-        "  bootstrap_launcher => {}".format(_erl_string(ctx.executable.bootstrap_launcher.path)),
+        "  bootstrap_erts_bin => {}".format(_erl_string(bootstrap_erts_bin)),
+        "  bootstrap_launcher => {}".format(_erl_string(bootstrap_launcher.path)),
         "  bootstrap_root => {}".format(_erl_string(bootstrap.erlang_home)),
         "  cflags => {}".format(_term_list(cflags)),
+        "  cxx_driver_flags => {}".format(_term_list(cxx_driver_flags)),
         "  arflags => {}".format(_term_list(archive.flags)),
         "  configure_options => {}".format(_term_list(configure_options)),
         "  crypto_activation_args => {}".format(_term_list(crypto.activation_args) if crypto else "[]"),
@@ -444,6 +486,9 @@ def _otp_source_release_impl(ctx):
         "  crypto_execution_wrapper => {}".format(_erl_string(crypto.execution_wrapper.executable.path) if crypto and crypto.execution_wrapper else "none"),
         "  crypto_execution_exec_wrapper => {}".format(_erl_string(crypto.execution_exec_wrapper.executable.path) if crypto and crypto.execution_exec_wrapper else "none"),
         "  crypto_linkopts => {}".format(_term_list(crypto.linkopts) if crypto else "[]"),
+        "  crypto_build_elf_interpreter => {}".format(
+            _erl_string(crypto.build_elf_interpreter) if crypto and crypto.build_elf_interpreter else "none",
+        ),
         "  crypto_prepared_state => {}".format(_erl_string(crypto.prepared_state.path) if crypto and crypto.prepared_state else "none"),
         "  crypto_runtime_environment => {}".format("#{" + ", ".join([
             "{} => {}".format(_erl_string(key), _erl_string(crypto.runtime_environment[key]))
@@ -458,17 +503,21 @@ def _otp_source_release_impl(ctx):
         "  exec_erts_bin_output => {}".format(_erl_string(exec_erts_bin.path)),
         "  fips_required => {}".format("true" if ctx.attr.fips == "required" else "false"),
         "  jobs => {}".format(ctx.attr.jobs),
+        "  jit => {}".format(_erl_string(ctx.attr.jit)),
         "  ded_ld => {}".format(_erl_string(dynamic_linker)),
+        "  ded_ld_driver_flags => {}".format(_term_list(dynamic_link_driver_flags)),
         "  ded_ldflags => {}".format(_term_list(dynamic_ldflags)),
         "  ded_libs => {}".format(_term_list(dynamic_libraries)),
         "  ded_ld_runtime_library_path => {}".format(_erl_string(dynamic_runtime_library_path_flag)),
         "  ldflags => {}".format(_term_list(executable_ldflags)),
+        "  ld_driver_flags => {}".format(_term_list(executable_link_driver_flags)),
         "  libraries => {}".format(_term_list(executable_libraries)),
         "  make => {}".format(_erl_string(ctx.executable.make.path)),
         "  make_options => {}".format(_term_list(ctx.attr.make_options)),
+        "  native_fully_static => {}".format("true" if ctx.attr.otp_fully_static else "false"),
         "  output => {}".format(_erl_string(install.path)),
         "  perl => {}".format(_erl_string(ctx.executable.perl.path)),
-        "  escript => {}".format(_erl_string(bootstrap.erts_bin + "/escript")),
+        "  escript => {}".format(_erl_string(bootstrap_erts_bin + "/escript")),
         "  static_crypto_nif => {}".format("true" if ctx.attr.static_crypto_nif else "false"),
         "  source_directories => {}".format(_erl_string(ctx.file.source_directories.path)),
         "  sources => [{}]".format(",\n    ".join(_source_entries(ctx.files.srcs))),
@@ -506,7 +555,7 @@ def _otp_source_release_impl(ctx):
             direct = direct_inputs,
             transitive = [bootstrap.runtime_files, cc_toolchain.all_files, crypto_inputs],
         ),
-        tools = [ctx.attr.bootstrap_launcher[DefaultInfo].files_to_run, ctx.attr.bash[DefaultInfo].files_to_run, ctx.attr.make[DefaultInfo].files_to_run, ctx.attr.perl[DefaultInfo].files_to_run] + posix_tools + ([crypto.activation_exec_tool] if crypto and crypto.activation_exec_tool else []),
+        tools = [bootstrap_launcher, ctx.attr.bash[DefaultInfo].files_to_run, ctx.attr.make[DefaultInfo].files_to_run, ctx.attr.perl[DefaultInfo].files_to_run] + posix_tools + ([crypto.activation_exec_tool] if crypto and crypto.activation_exec_tool else []),
         outputs = [install, erts_bin, exec_erts_bin, erl],
         env = action_env,
         execution_requirements = _execution_requirements(feature_configuration, [
@@ -539,6 +588,8 @@ def _otp_source_release_impl(ctx):
         ),
         OtpInfo(
             version = ctx.attr.version,
+            boot_file = None,
+            boot_file_short_path = "",
             crypto_sdk = crypto,
             erlang_home = erlang_home,
             erlang_home_short_path = erlang_home_short_path,
@@ -549,6 +600,9 @@ def _otp_source_release_impl(ctx):
             exec_erts_bin = exec_erts_bin.path,
             exec_erts_bin_short_path = exec_erts_bin.short_path,
             fips = ctx.attr.fips,
+            fully_static = ctx.attr.otp_fully_static,
+            jit = ctx.attr.jit,
+            runtime_wrapped = has_runtime_wrapper,
             runtime_files = runtime_files,
             static_crypto_nif = ctx.attr.static_crypto_nif,
             version_file = version_file,
@@ -561,7 +615,6 @@ otp_source_release = rule(
         "version": attr.string(mandatory = True),
         "srcs": attr.label_list(mandatory = True, allow_files = True),
         "bootstrap_otp": attr.label(mandatory = True, providers = [OtpInfo], cfg = config.exec(_OTP_BUILD_EXEC_GROUP)),
-        "bootstrap_launcher": attr.label(mandatory = True, executable = True, cfg = config.exec(_OTP_BUILD_EXEC_GROUP)),
         "bash": attr.label(mandatory = True, executable = True, allow_files = True, cfg = config.exec(_OTP_BUILD_EXEC_GROUP)),
         "make": attr.label(mandatory = True, executable = True, allow_files = True, cfg = config.exec(_OTP_BUILD_EXEC_GROUP)),
         "posix_tools": attr.label_list(mandatory = True, allow_files = True, cfg = config.exec(_OTP_BUILD_EXEC_GROUP)),
@@ -571,12 +624,16 @@ otp_source_release = rule(
         "fips": attr.string(default = "disabled", values = ["disabled", "required"]),
         "configure_options": attr.string_list(),
         "make_options": attr.string_list(),
+        "otp_fully_static": attr.bool(default = False),
         "copts": attr.string_list(),
         "cxxopts": attr.string_list(),
         "linkopts": attr.string_list(),
         "static_crypto_nif": attr.bool(default = False),
         "source_directories": attr.label(mandatory = True, allow_single_file = True),
         "jobs": attr.int(default = 8),
+        "jit": attr.string(default = "auto", values = ["auto", "disabled", "required"]),
+        "libc": attr.string(mandatory = True, values = ["glibc", "musl"]),
+        "target_arch": attr.string(mandatory = True, values = ["amd64", "arm64"]),
         "_driver": attr.label(
             default = Label("//private:otp_build_driver.erl"),
             allow_single_file = [".erl"],

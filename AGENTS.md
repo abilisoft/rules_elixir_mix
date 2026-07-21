@@ -14,6 +14,20 @@ review.
 - Treat failed validation as a defect to fix. Never weaken, bypass, or remove a
   required check merely to make CI pass.
 
+## Rule implementation
+
+- Implement Bazel behavior in Starlark whenever Bazel exposes the required
+  primitive. Do not embed shell scripts or use shell actions as glue.
+- Use Erlang or Elixir only when the selected hermetic BEAM toolchain is the
+  actual executor and the operation belongs to OTP, Elixir, or Mix.
+- If Starlark and the language toolchain cannot express an unavoidable
+  build-time operation, a Python tool is the last resort. It must use a
+  declared hermetic Python toolchain and pass Ruff, Pylint, ty, and mypy in
+  their strictest supported modes. Python source has a 120-column limit.
+- Runtime launchers must be declared, cacheable executables with complete
+  runfiles. They may not discover a host interpreter, shell, loader, compiler,
+  SDK, package tree, or shared library.
+
 ## Repository publishing
 
 - The canonical GitHub repository is `abilisoft/rules_elixir_mix` and is

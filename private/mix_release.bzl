@@ -265,8 +265,6 @@ def _mix_release_impl(ctx):
             "RULES_ELIXIR_MIX_CRYPTO_LAUNCH_TOOL": otp.crypto_sdk.activation_tool_release_path,
             "RULES_ELIXIR_MIX_CRYPTO_RELEASE_MANIFEST": crypto_manifest.path,
         })
-        if otp.crypto_sdk.execution_wrapper:
-            internal_env["RULES_ELIXIR_MIX_CRYPTO_EXECUTION_WRAPPER"] = otp.crypto_sdk.execution_wrapper_release_path
     internal_env["RULES_ELIXIR_MIX_OUTPUT"] = release_dir.path
     release_args = ([ctx.attr.release_name] if ctx.attr.release_name else []) + [
         "--path",

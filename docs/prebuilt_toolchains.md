@@ -9,7 +9,7 @@ SPDX-License-Identifier: Apache-2.0
 [Source toolchains](source_toolchains.md) · [Agent playbook](agents/README.md)
 
 Use this path when a producer already supplies verified OTP and Elixir archives
-for the exact execution platform. It is the normal low-latency CI path.
+for the exact target runtime ABI. It is the normal low-latency CI path.
 
 A prebuilt toolchain is a pair of checksum-pinned archives: one OTP runtime and
 one Elixir runtime built for that OTP version. Archives must already be usable
@@ -31,6 +31,7 @@ beam.prebuilt_toolchain(
     otp_strip_prefix = "otp-29.0.3-linux-x86_64",
     otp_type = "tar.gz",
     erlexec = "erts-17.0.3/bin/erlexec",
+    otp_fully_static = True,
     elixir_version = "1.20.2",
     elixir_url = "https://artifacts.example/elixir-1.20.2-otp-29-linux-x86_64.tar.gz",
     elixir_sha256 = "...",
@@ -45,13 +46,14 @@ beam.prebuilt_toolchain(
         "@platforms//cpu:x86_64",
         "@platforms//os:linux",
     ],
-    runtime_abi = "//platforms:otp29_elixir120_glibc239_x86_64",
+    runtime_abi = "//platforms:otp29_elixir120_glibc235_x86_64",
 )
 
 use_repo(beam, "elixir_config")
 register_toolchains(
     "@elixir_config//linux_x86_64:otp_toolchain",
     "@elixir_config//linux_x86_64:toolchain",
+    "@elixir_config//linux_x86_64:test_toolchain",
 )
 ```
 
@@ -102,15 +104,50 @@ release gate must also pass the crypto producer's provenance tests and
 `elixir_fips_runtime_test`; this ruleset does not turn a successful archive
 action into a backend certification. See [Publishing](publishing.md).
 
+An OTP archive produced from a dynamically linked crypto SDK contains a static
+wrapper beside every real native executable. Import that archive with
+`otp_runtime_wrapped = True` and the same normalized `crypto_sdk`. The import
+action verifies the complete tree, including OTP port programs outside the
+ERTS directory; it does not treat one wrapper around `erlexec` as a complete
+runtime contract. It also recursively validates `DT_NEEDED` for executables,
+NIFs, and shared objects against only the archive and normalized SDK.
+
 ## Archive and platform contract
 
 The archive checksum and every runtime file are action inputs, so OTP/Elixir
 changes invalidate the relevant cache entries. `runtime_abi` is a mandatory,
-dedicated constraint value that must also appear on the selected execution
-platform. It identifies libc, loader, NIF ABI, and the immutable native runtime
-closure; OS and CPU alone are not sufficient. Pin the execution platform image
-by digest in `exec_properties` so that constraint has a concrete worker
-meaning.
+dedicated target constraint identifying libc, loader, NIF ABI, and the
+immutable native runtime closure; OS and CPU alone are not sufficient. It is
+not an execution-platform label. `exec_compatible_with` independently names
+where the archive itself can run. This constraint is mandatory in practice for
+both generated toolchains and direct `otp_prebuilt_release` targets: it stops
+Bazel before a foreign-CPU executable can reach the operating system's
+`ENOEXEC` shell fallback. It must name the archive's real Linux CPU, not the
+machine on which the BUILD file was authored.
+
+The public archive repository rejects dangling and escaping symlinks before
+analysis exposes any extracted file. Runtime verification then proves the
+complete ELF closure rather than trusting archive layout alone.
+
+An archive must select exactly one verified native contract. Set
+`otp_fully_static = True` when every native OTP executable is statically
+linked. Set `otp_runtime_wrapped = True` only for an archive whose every
+dynamic executable has an adjacent static wrapper and declare the SDK that
+owns the loader and runtime libraries. The verification action walks the
+entire archive and rejects a dynamic executable outside that shape.
+It additionally rejects missing or ambiguous native dependencies, including
+dependencies reached only after a NIF is loaded.
+Arbitrary dynamically linked distributor archives are not accepted through
+the URL form because a launcher for one process cannot make its descendants
+hermetic. A Bazel producer may instead expose a provider-backed `OtpInfo` that
+owns a complete normalized runtime.
+Merely selecting a worker whose host happens to contain a compatible libc is
+not sufficient. The verification action blocks networking and does not invoke
+an install script, relocate the archive, search `PATH`, or fall back to host
+libraries. A common distributor's pre-install archive may set `otp_boot_file`
+to its declared `releases/<major>/start_clean.boot`; the path is passed
+extensionless with `-boot` during verification and every downstream BEAM
+launch, and the installer remains unexecuted.
 
 Mix actions do not execute `bin/elixir` or `bin/mix`; the marker is used only
 to derive the extracted Elixir root. Actions enter Elixir through the declared

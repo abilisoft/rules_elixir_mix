@@ -1,7 +1,9 @@
 # SPDX-FileCopyrightText: 2026 AbiliSoft
 # SPDX-License-Identifier: Apache-2.0
 
-Code.require_file("source_catalog.ex", __DIR__)
+unless Code.ensure_loaded?(RulesElixirMix.SourceCatalog) do
+  Code.require_file("source_catalog.ex", __DIR__)
+end
 
 ExUnit.start()
 

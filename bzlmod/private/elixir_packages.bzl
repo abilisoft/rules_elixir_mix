@@ -1,6 +1,7 @@
 """Module extension for checksum-pinned Hex package repositories."""
 
-load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive", "http_file")
+load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
+load("//repositories:source_archive.bzl", "source_archive")
 load(":common.bzl", "format_deps_str", "package_build_file_content")
 load(":hex_package.bzl", "hex_package_repo", "hex_package_tag")
 load(":mix_deps_repo.bzl", "mix_deps_repo")
@@ -19,11 +20,12 @@ def _elixir_packages_impl(module_ctx):
 
     # Always provide hex_pm repository automatically
     # This ensures hex is available as a dependency for all mix_library targets
-    http_archive(
+    source_archive(
         name = "hex_pm",
-        urls = ["https://github.com/hexpm/hex/archive/refs/tags/v2.5.0.tar.gz"],
-        strip_prefix = "hex-2.5.0",
-        sha256 = "d90279cdc66e842df8b27826dec8529fd2323eb8951a40c9d70fb5d834168b79",
+        urls = ["https://github.com/hexpm/hex/archive/refs/tags/v2.5.1.tar.gz"],
+        strip_prefix = "hex-2.5.1",
+        sha256 = "bdd6ef2015aa6e50a1c21212e098e8cbe7317da65f067955d154d890532742ae",
+        archive_type = "tar.gz",
         build_file_content = """
 load("@rules_elixir_mix//:defs.bzl", "mix_library")
 
@@ -67,6 +69,7 @@ mix_library(
                 "manager": dep.manager,
                 "native_build": dep.native_build,
                 "precompiled_native_artifacts": [str(label) for label in dep.precompiled_native_artifacts],
+                "precompiled_native_files": [str(label) for label in dep.precompiled_native_files],
                 "module": mod,
                 "repository_name": dep.repository_name,
                 "repository_url": dep.repository_url,
@@ -107,6 +110,7 @@ mix_library(
             manager = pkg["manager"],
             native_build = pkg["native_build"],
             precompiled_native_artifacts = pkg["precompiled_native_artifacts"],
+            precompiled_native_files = pkg["precompiled_native_files"],
             repository_name = pkg["repository_name"],
             repository_url = pkg["repository_url"],
         )
@@ -140,9 +144,13 @@ mix_library(
                 runtime_deps = [labels[dep] for dep in spec.runtime_deps if dep in labels]
                 native_artifact = lock.precompiled_native_artifacts.get(spec.package)
                 native_artifacts = [str(native_artifact)] if native_artifact else []
-                native_build = spec.package in lock.native_build_packages and not native_artifacts
-                if native_artifacts and spec.manager != "mix":
-                    fail("precompiled native artifacts are only supported for Mix package '{}'".format(spec.package))
+                native_file = lock.precompiled_native_files.get(spec.package)
+                native_files = [str(native_file)] if native_file else []
+                native_build = spec.package in lock.native_build_packages and not native_artifacts and not native_files
+                if (native_artifacts or native_files) and spec.manager != "mix":
+                    fail("precompiled native inputs are only supported for Mix package '{}'".format(spec.package))
+                if native_artifacts and native_files:
+                    fail("package '{}' cannot use both precompiled_native_artifacts and precompiled_native_files".format(spec.package))
                 identity = repr([
                     spec.app_name,
                     spec.package,
@@ -152,6 +160,7 @@ mix_library(
                     compile_deps,
                     runtime_deps,
                     native_artifacts,
+                    native_files,
                     native_build,
                     spec.repository,
                     repository_urls.get(spec.repository),
@@ -180,10 +189,15 @@ mix_library(
                         build_file_content = package_build_file_content(
                             app_name = spec.app_name,
                             manager = spec.manager,
+                            package = spec.package,
                             explicit_deps_str = format_deps_str(runtime_deps),
                             compile_deps_str = format_deps_str(compile_deps),
                             native_build = native_build,
                             precompiled_native_artifacts_str = format_deps_str(native_artifacts),
+                            precompiled_native_files_str = format_deps_str(native_files),
+                            repository = spec.repository,
+                            sha256 = spec.sha256,
+                            version = spec.version,
                         ),
                         patches = [],
                         patch_args = ["-p0"],
@@ -248,6 +262,7 @@ def _same_hex_package(a, b):
         a["manager"] == b["manager"] and
         a["native_build"] == b["native_build"] and
         a["precompiled_native_artifacts"] == b["precompiled_native_artifacts"] and
+        a["precompiled_native_files"] == b["precompiled_native_files"] and
         a["repository_name"] == b["repository_name"] and
         a["repository_url"] == b["repository_url"]
     )
@@ -264,6 +279,7 @@ elixir_packages = module_extension(
                 "hexpm": "https://repo.hex.pm",
             }),
             "precompiled_native_artifacts": attr.string_keyed_label_dict(allow_files = True),
+            "precompiled_native_files": attr.string_keyed_label_dict(allow_files = True),
             "native_build_packages": attr.string_list(),
         }),
     },

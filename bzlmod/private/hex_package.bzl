@@ -7,7 +7,7 @@ Dependency resolution is handled by external tooling.
 load(":common.bzl", "format_deps_str", "package_build_file_content")
 load(":hex_archive.bzl", "hex_archive")
 
-def hex_package_repo(name, pkg, version, sha256, integrity, build_file, build_file_content, patches, patch_args, explicit_deps = [], compile_deps = [], native_build = False, precompiled_native_artifacts = [], manager = "mix", repository_name = "hexpm", repository_url = "https://repo.hex.pm"):
+def hex_package_repo(name, pkg, version, sha256, integrity, build_file, build_file_content, patches, patch_args, explicit_deps = [], compile_deps = [], native_build = False, precompiled_native_artifacts = [], precompiled_native_files = [], manager = "mix", repository_name = "hexpm", repository_url = "https://repo.hex.pm"):
     """Create a hex_archive repository for a package.
 
     Args:
@@ -24,21 +24,22 @@ def hex_package_repo(name, pkg, version, sha256, integrity, build_file, build_fi
       compile_deps: Compile-only dependency labels for the generated rule.
       native_build: Whether the package may invoke a native source compiler.
       precompiled_native_artifacts: Checksum-pinned archives staged for ElixirMake.
+      precompiled_native_files: Validated native files copied directly into package priv.
       manager: Generated package build manager, `mix` or `rebar3`.
       repository_name: Repository identifier stored in Hex metadata.
       repository_url: Explicit base URL used to fetch the archive.
     """
     package_name = pkg if pkg else name
-    if precompiled_native_artifacts and manager != "mix":
-        fail("precompiled native artifacts are only supported for Mix package {}".format(name))
+    if (precompiled_native_artifacts or precompiled_native_files) and manager != "mix":
+        fail("precompiled native inputs are only supported for Mix package {}".format(name))
     if integrity:
         fail("hex_package {} uses integrity; rules_elixir_mix currently requires sha256".format(name))
     if not sha256:
         fail("hex_package {} must set sha256".format(name))
 
     if build_file:
-        if explicit_deps or compile_deps or native_build or precompiled_native_artifacts:
-            fail("explicit_deps/compile_deps/native_build/precompiled_native_artifacts and build_file are mutually exclusive")
+        if explicit_deps or compile_deps or native_build or precompiled_native_artifacts or precompiled_native_files:
+            fail("generated dependency/native attributes and build_file are mutually exclusive")
         hex_archive(
             name = name,
             package_name = package_name,
@@ -52,8 +53,8 @@ def hex_package_repo(name, pkg, version, sha256, integrity, build_file, build_fi
             patch_args = patch_args,
         )
     elif build_file_content:
-        if explicit_deps or compile_deps or native_build or precompiled_native_artifacts:
-            fail("explicit_deps/compile_deps/native_build/precompiled_native_artifacts and build_file_content are mutually exclusive")
+        if explicit_deps or compile_deps or native_build or precompiled_native_artifacts or precompiled_native_files:
+            fail("generated dependency/native attributes and build_file_content are mutually exclusive")
 
         hex_archive(
             name = name,
@@ -82,8 +83,13 @@ def hex_package_repo(name, pkg, version, sha256, integrity, build_file, build_fi
                 compile_deps_str = format_deps_str(compile_deps),
                 manager = manager,
                 native_build = native_build,
+                package = package_name,
                 explicit_deps_str = format_deps_str(explicit_deps),
                 precompiled_native_artifacts_str = format_deps_str(precompiled_native_artifacts),
+                precompiled_native_files_str = format_deps_str(precompiled_native_files),
+                repository = repository_name,
+                sha256 = sha256,
+                version = version,
             ),
             patches = patches,
             patch_args = patch_args,
@@ -105,6 +111,7 @@ hex_package_tag = tag_class(attrs = {
     "manager": attr.string(default = "mix", values = ["mix", "rebar3"], doc = "Generated package build manager"),
     "native_build": attr.bool(default = False, doc = "Allow the generated Mix target to use the selected native build closure"),
     "precompiled_native_artifacts": attr.label_list(allow_files = True, default = [], doc = "Checksum-pinned archives staged in ElixirMake's isolated cache"),
+    "precompiled_native_files": attr.label_list(allow_files = True, default = [], doc = "Validated native files copied directly into package priv"),
     "repository_name": attr.string(default = "hexpm", doc = "Hex repository identifier"),
     "repository_url": attr.string(default = "https://repo.hex.pm", doc = "Explicit Hex repository base URL"),
 })

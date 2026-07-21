@@ -12,3 +12,90 @@ generated_asset = rule(
         "filename": attr.string(),
     },
 )
+
+def _javascript_asset_impl(ctx):
+    output = ctx.actions.declare_file(ctx.label.name + ".js")
+    ctx.actions.symlink(
+        output = output,
+        target_file = ctx.file.src,
+    )
+    return [DefaultInfo(files = depset([output]))]
+
+javascript_asset = rule(
+    implementation = _javascript_asset_impl,
+    attrs = {
+        "src": attr.label(allow_single_file = [".js"], mandatory = True),
+    },
+    doc = "Minimal non-BEAM asset consumer used to prove public Hex projections.",
+)
+
+def _escript_codegen_impl(ctx):
+    output = ctx.actions.declare_file(ctx.label.name + ".json")
+    args = ctx.actions.args()
+    args.add_all([
+        "--root",
+        ctx.attr.root,
+        "--router",
+        ctx.attr.router,
+        "--out",
+        output.path,
+        "--format",
+        "json",
+        "--no-config",
+        "--private",
+    ])
+    ctx.actions.run(
+        executable = ctx.executable.tool,
+        arguments = [args],
+        inputs = ctx.files.srcs,
+        tools = [ctx.attr.tool[DefaultInfo].files_to_run],
+        outputs = [output],
+        env = {
+            "HOME": output.path + ".home",
+            "LANG": "C",
+            "LC_ALL": "C",
+            "TZ": "UTC",
+        },
+        execution_requirements = {"block-network": "1"},
+        mnemonic = "EscriptCodegen",
+        use_default_shell_env = False,
+    )
+    return [DefaultInfo(files = depset([output]))]
+
+escript_codegen = rule(
+    implementation = _escript_codegen_impl,
+    attrs = {
+        "root": attr.string(mandatory = True),
+        "router": attr.string(mandatory = True),
+        "srcs": attr.label_list(allow_files = True),
+        "tool": attr.label(mandatory = True, executable = True, cfg = "exec"),
+    },
+    doc = "Execute a generated escript as a tool in a network-blocked action.",
+)
+
+def _escript_write_impl(ctx):
+    output = ctx.actions.declare_file(ctx.label.name + ".txt")
+    ctx.actions.run(
+        executable = ctx.executable.tool,
+        arguments = [output.path],
+        tools = [ctx.attr.tool[DefaultInfo].files_to_run],
+        outputs = [output],
+        env = {
+            "HOME": output.path + ".home",
+            "LANG": "C",
+            "LC_ALL": "C",
+            "TZ": "UTC",
+        },
+        execution_requirements = {"block-network": "1"},
+        mnemonic = "EscriptWrite",
+        use_default_shell_env = False,
+    )
+    return [DefaultInfo(files = depset([output]))]
+
+escript_write = rule(
+    implementation = _escript_write_impl,
+    attrs = {
+        "tool": attr.label(mandatory = True, executable = True, cfg = "exec"),
+    },
+    doc = "Execute the minimal escript fixture as a declared code-generation tool.",
+)

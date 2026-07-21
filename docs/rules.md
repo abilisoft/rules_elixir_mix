@@ -23,6 +23,8 @@ Load public APIs from `@rules_elixir_mix//:defs.bzl`. Module extensions live in
 | `elixir_priv` | Map one declared artifact into an application's `priv` tree |
 | `elixir_nif`, `rustler_nif` | Map a Bazel-built shared library below `priv/native` |
 | `elixir_protocols`, `mix_protocols` | Consolidate declared protocol implementations |
+| `hex_package_assets` | Project exact package-relative files from a checksum-pinned Hex dependency |
+| `mix_escript` | Build a compiled Mix application into an executable escript Bazel tool |
 
 ## Tests and analysis
 
@@ -52,6 +54,7 @@ Load public APIs from `@rules_elixir_mix//:defs.bzl`. Module extensions live in
 | `mix_release` | Assemble a Mix release from declared applications/config/data |
 | `elixir_release_test` | Boot the packaged release with build-time paths removed |
 | `mix_local` | Writable local Mix workflow over the real workspace |
+| `mix_deps_update` | Explicit online `mix deps.update --all` workflow over the real workspace |
 | `mix_phx_server` | Local-only Phoenix server/code reload workflow |
 | `mix_iex` | IEx with the selected runtime and application graph |
 | `elixir_ls` | ElixirLS over the same graph instead of a second fake Mix build |
@@ -80,6 +83,9 @@ rules exist for producers and advanced repository integration.
 | `OtpInfo` | OTP runtime, executables, version, FIPS/runtime state |
 | `ElixirInfo` | Elixir runtime and OTP relationship |
 | `OtpCryptoSdkInfo` | Normalized SDK sysroot, runtime payload, activation, metadata |
+| `HexPackageInfo` | Lock-owned Hex archive identity and complete source mapping |
+| `HexPackageAssetsInfo` | Selected Hex source assets plus their package/version/checksum identity |
+| `MixEscriptInfo` | Built escript and any declared provider-runtime sidecar |
 | `ElixirPrivInfo` | Stable mappings into an OTP application's `priv` tree |
 | `ElixirSourceInfo` | Generated input with a stable logical destination |
 | `ElixirProtocolInfo` | Protocol consolidation inputs/output |
@@ -104,7 +110,8 @@ Is it a check?
 └─ packaged runtime behavior ─> elixir_release_test / elixir_fips_runtime_test
 
 Does it need a writable checkout?
-├─ yes ───────────────────────> mix_local / mix_phx_server / mix_iex / elixir_ls
+├─ dependency lock update ────> mix_deps_update
+├─ other writable workflow ───> mix_local / mix_phx_server / mix_iex / elixir_ls
 └─ no ────────────────────────> ordinary hermetic build/test action
 ```
 

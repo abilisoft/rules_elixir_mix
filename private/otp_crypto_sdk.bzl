@@ -5,6 +5,7 @@ load("//private:beam_info.bzl", "OtpCryptoSdkInfo")
 _SYSROOT = "{sysroot}"
 _ACTIVATION_ROOT = "{activation_root}"
 _PROGRAM = "{program}"
+_DECLARED_LOADER_ROOT = "/__bazel_hermetic_runtime__/"
 
 def crypto_sdk_info(target):
     """Return the normalized SDK provider or adapt the legacy directory form.
@@ -30,6 +31,8 @@ def crypto_sdk_info(target):
         activation_tool = None,
         activation_tool_release_path = "",
         backend_metadata = {},
+        build_elf_interpreter = "",
+        cc_features = [],
         exec_files = depset(),
         exec_support_files = depset(),
         execution_exec_wrapper = None,
@@ -75,6 +78,15 @@ def _validate_linkopts(linkopts):
         if option in ["-l", "-L", "-Xlinker", "--library-path"] or option.startswith("-L") or "-Wl,-L" in option:
             fail("crypto SDK linkopts must not add undeclared library search paths or split linker arguments: '{}'".format(option))
 
+def _validate_build_elf_interpreter(value):
+    if not value.startswith(_DECLARED_LOADER_ROOT) or ".." in value.split("/") or "\\" in value or "\n" in value:
+        fail(
+            "build_elf_interpreter must be a fail-closed marker below {}: '{}'".format(
+                _DECLARED_LOADER_ROOT,
+                value,
+            ),
+        )
+
 def _validate_runtime_environment(environment):
     reserved = [
         "BINDIR",
@@ -106,7 +118,7 @@ def _validate_normalized_info(info):
         fail("OtpCryptoSdkInfo.sysroot must be a directory artifact")
     _validate_linkopts(info.linkopts)
     if info.fully_static:
-        if info.runtime_files.to_list() or info.runtime_entries or info.runtime_environment or info.activation_exec_tool or info.activation_tool or info.activation_args or info.activation_tool_release_path or info.execution_exec_wrapper or info.execution_wrapper or info.execution_wrapper_environment or info.execution_wrapper_release_path or info.exec_support_files.to_list() or info.prepared_state:
+        if info.runtime_files.to_list() or info.runtime_entries or info.runtime_environment or info.activation_exec_tool or info.activation_tool or info.activation_args or info.activation_tool_release_path or info.execution_exec_wrapper or info.execution_wrapper or info.execution_wrapper_environment or info.execution_wrapper_release_path or info.exec_support_files.to_list() or info.prepared_state or info.build_elf_interpreter:
             fail("fully_static OtpCryptoSdkInfo must not declare runtime files, environment, activation, or an execution wrapper")
         return
     if not info.runtime_files.to_list() or not info.runtime_entries:
@@ -125,16 +137,22 @@ def _validate_normalized_info(info):
         _validate_template(value, "activation_args")
     _validate_runtime_environment(info.runtime_environment)
     for key, value in info.runtime_environment.items():
+        if "\n" in value:
+            fail("runtime_environment[{}] contains an invalid control character".format(key))
         _validate_template(value, "runtime_environment[{}]".format(key))
         if not value.startswith(_SYSROOT) and not value.startswith(_ACTIVATION_ROOT):
             fail("runtime_environment[{}] must be rooted at {{sysroot}} or {{activation_root}}".format(key))
     _validate_runtime_environment(info.execution_wrapper_environment)
     for key, value in info.execution_wrapper_environment.items():
+        if "\n" in value:
+            fail("execution_wrapper_environment[{}] contains an invalid control character".format(key))
         _validate_template(value, "execution_wrapper_environment[{}]".format(key), allow_program = True)
-        if not value.startswith(_SYSROOT) and value != _PROGRAM:
-            fail("execution_wrapper_environment[{}] must be rooted at {{sysroot}} or equal {{program}}".format(key))
     if info.execution_wrapper and not any([_PROGRAM in value for value in info.execution_wrapper_environment.values()]):
         fail("execution_wrapper_environment must pass {program} to the opaque wrapper")
+    if info.execution_wrapper and not info.build_elf_interpreter:
+        fail("execution wrappers require a fail-closed build_elf_interpreter marker")
+    if info.build_elf_interpreter:
+        _validate_build_elf_interpreter(info.build_elf_interpreter)
     destinations = [entry.destination for entry in info.runtime_entries]
     if len(destinations) != len({destination: True for destination in destinations}):
         fail("OtpCryptoSdkInfo runtime destinations must be unique")
@@ -202,7 +220,7 @@ def _otp_crypto_sdk_impl(ctx):
     execution_wrapper = ctx.attr.execution_wrapper[DefaultInfo].files_to_run if ctx.attr.execution_wrapper else None
     exec_support_files = depset(ctx.files.exec_support_files)
     if ctx.attr.fully_static:
-        if runtime_files or ctx.attr.runtime_environment or activation_exec_tool or activation_tool or ctx.attr.activation_args or ctx.attr.activation_tool_release_path or execution_exec_wrapper or execution_wrapper or ctx.attr.execution_wrapper_environment or ctx.attr.execution_wrapper_release_path:
+        if runtime_files or ctx.attr.runtime_environment or activation_exec_tool or activation_tool or ctx.attr.activation_args or ctx.attr.activation_tool_release_path or execution_exec_wrapper or execution_wrapper or ctx.attr.execution_wrapper_environment or ctx.attr.execution_wrapper_release_path or ctx.attr.build_elf_interpreter:
             fail("fully_static SDKs must not declare runtime files, environment, activation, or an execution wrapper")
     else:
         if not runtime_files:
@@ -223,6 +241,8 @@ def _otp_crypto_sdk_impl(ctx):
         _validate_relative_path(ctx.attr.execution_wrapper_release_path, "execution_wrapper_release_path")
     _validate_runtime_environment(ctx.attr.runtime_environment)
     for key, value in ctx.attr.runtime_environment.items():
+        if "\n" in value:
+            fail("runtime_environment[{}] contains an invalid control character".format(key))
         _validate_template(value, "runtime_environment[{}]".format(key))
         if not value.startswith(_SYSROOT) and not value.startswith(_ACTIVATION_ROOT):
             fail("runtime_environment[{}] must be rooted at {{sysroot}} or {{activation_root}}".format(key))
@@ -230,11 +250,15 @@ def _otp_crypto_sdk_impl(ctx):
         _validate_template(value, "activation_args")
     _validate_runtime_environment(ctx.attr.execution_wrapper_environment)
     for key, value in ctx.attr.execution_wrapper_environment.items():
+        if "\n" in value:
+            fail("execution_wrapper_environment[{}] contains an invalid control character".format(key))
         _validate_template(value, "execution_wrapper_environment[{}]".format(key), allow_program = True)
-        if not value.startswith(_SYSROOT) and value != _PROGRAM:
-            fail("execution_wrapper_environment[{}] must be rooted at {{sysroot}} or equal {{program}}".format(key))
     if execution_wrapper and not any([_PROGRAM in value for value in ctx.attr.execution_wrapper_environment.values()]):
         fail("execution_wrapper_environment must pass {program} to the opaque wrapper")
+    if execution_wrapper and not ctx.attr.build_elf_interpreter:
+        fail("execution wrappers require a fail-closed build_elf_interpreter marker")
+    if ctx.attr.build_elf_interpreter:
+        _validate_build_elf_interpreter(ctx.attr.build_elf_interpreter)
     _validate_linkopts(ctx.attr.linkopts)
 
     entries = [
@@ -326,6 +350,8 @@ def _otp_crypto_sdk_impl(ctx):
         activation_tool = activation_tool,
         activation_tool_release_path = ctx.attr.activation_tool_release_path,
         backend_metadata = ctx.attr.backend_metadata,
+        build_elf_interpreter = ctx.attr.build_elf_interpreter,
+        cc_features = ctx.attr.cc_features,
         exec_files = exec_files,
         exec_support_files = exec_support_files,
         execution_exec_wrapper = execution_exec_wrapper,
@@ -355,6 +381,8 @@ otp_crypto_sdk = rule(
         "activation_tool": attr.label(executable = True, cfg = "target", allow_files = True),
         "activation_tool_release_path": attr.string(),
         "backend_metadata": attr.string_dict(),
+        "build_elf_interpreter": attr.string(),
+        "cc_features": attr.string_list(),
         "execution_exec_wrapper": attr.label(executable = True, cfg = "exec", allow_files = True),
         "execution_wrapper": attr.label(executable = True, cfg = "target", allow_files = True),
         "execution_wrapper_environment": attr.string_dict(),

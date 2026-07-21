@@ -152,7 +152,7 @@ run_packaged_release(
     ],
     Launcher = filename:join([ReleaseRoot, "bin", ReleaseName]),
     true = filelib:is_regular(Launcher),
-    LaunchConfigPath = Launcher ++ ".rules_fips.json",
+    LaunchConfigPath = Launcher ++ ".rules_elixir_mix.crypto.json",
     {ok, LaunchJson} = file:read_file(LaunchConfigPath),
     #{<<"schema">> := 1, <<"command">> := <<"start">>, <<"arguments">> := LaunchArguments} =
         LaunchConfig = json:decode(LaunchJson),
@@ -206,7 +206,7 @@ run_packaged_release(
         <<"writable_copies">> => LaunchWritableCopies
     },
     ok = file:write_file(
-        NativeLauncher ++ ".rules_fips.json",
+        NativeLauncher ++ ".rules_elixir_mix.crypto.json",
         json:encode(TestLaunchConfig)
     ),
     run(

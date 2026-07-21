@@ -20,7 +20,7 @@ your execution platform.
 
 ## 1. Pin the ruleset
 
-The signed [`v0.2.1` GitHub release](https://github.com/abilisoft/rules_elixir_mix/releases/tag/v0.2.1)
+The signed [`v0.3.0` GitHub release](https://github.com/abilisoft/rules_elixir_mix/releases/tag/v0.3.0)
 is intentionally not published to BCR yet. Consume it through the full,
 GitHub-verified commit referenced by that tag:
 
@@ -32,13 +32,13 @@ module(
 
 bazel_dep(
     name = "rules_elixir_mix",
-    version = "0.2.1",
+    version = "0.3.0",
 )
 
 git_override(
     module_name = "rules_elixir_mix",
     remote = "https://github.com/abilisoft/rules_elixir_mix.git",
-    commit = "<full peeled commit ID for v0.2.1>",
+    commit = "<full peeled commit ID for v0.3.0>",
 )
 
 bazel_dep(name = "platforms", version = "1.1.0")
@@ -47,7 +47,7 @@ bazel_dep(name = "platforms", version = "1.1.0")
 Resolve and verify the annotated tag before copying its peeled commit ID:
 
 ```console
-git fetch https://github.com/abilisoft/rules_elixir_mix.git tag v0.2.1
+git fetch https://github.com/abilisoft/rules_elixir_mix.git tag v0.3.0
 git verify-tag FETCH_HEAD
 git rev-parse FETCH_HEAD^{}
 ```
@@ -67,7 +67,7 @@ Create a constraint for the exact runtime closure:
 constraint_setting(name = "runtime_abi")
 
 constraint_value(
-    name = "otp29_elixir120_glibc239",
+    name = "otp29_elixir120_glibc235",
     constraint_setting = ":runtime_abi",
 )
 
@@ -76,14 +76,24 @@ platform(
     constraint_values = [
         "@platforms//cpu:x86_64",
         "@platforms//os:linux",
-        ":otp29_elixir120_glibc239",
+        ":otp29_elixir120_glibc235",
+    ],
+)
+
+platform(
+    name = "linux_execution_x86_64",
+    constraint_values = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
     ],
 )
 ```
 
-For remote execution, bind the platform to an immutable container image digest
-using the property understood by your executor. The name should describe the
-real libc/loader/NIF closure, not a wishful compatibility range.
+Use `beam_linux_x86_64` as the target platform. Bind the separate execution
+platform to an immutable container image digest using the property understood
+by your executor. The runtime ABI name should describe the real
+libc/loader/NIF closure, not a wishful compatibility range, and must not be
+copied onto an unrelated build worker merely to make toolchain resolution pass.
 
 For Linux ARM64, define a separate platform using
 `@platforms//cpu:arm64`, a separately verified ARM64 `runtime_abi`, and ARM64
@@ -109,6 +119,7 @@ beam.prebuilt_toolchain(
     otp_url = "https://artifacts.example/otp-29.0.3-linux-x86_64.tar.zst",
     otp_sha256 = "<64-hex-sha256>",
     erlexec = "erts-17.0.3/bin/erlexec",
+    otp_fully_static = True,
     elixir_version = "1.20.2",
     elixir_url = "https://artifacts.example/elixir-1.20.2-otp-29.tar.gz",
     elixir_sha256 = "<64-hex-sha256>",
@@ -116,7 +127,7 @@ beam.prebuilt_toolchain(
         "@platforms//cpu:x86_64",
         "@platforms//os:linux",
     ],
-    runtime_abi = "//platforms:otp29_elixir120_glibc239",
+    runtime_abi = "//platforms:otp29_elixir120_glibc235",
 )
 
 use_repo(beam, "elixir_config")
@@ -124,9 +135,10 @@ use_repo(beam, "elixir_config")
 register_toolchains(
     "@elixir_config//linux_x86_64:otp_toolchain",
     "@elixir_config//linux_x86_64:toolchain",
+    "@elixir_config//linux_x86_64:test_toolchain",
 )
 
-register_execution_platforms("//platforms:beam_linux_x86_64")
+register_execution_platforms("//platforms:linux_execution_x86_64")
 ```
 
 The archive must run from its extracted location. The ruleset does not relocate

@@ -16,6 +16,9 @@ load("//private:elixir_toolchain.bzl", _elixir_toolchain = "elixir_toolchain")
 load("//private:erlang_app.bzl", _erlang_app = "erlang_app")
 load("//private:erlang_test.bzl", _erlang_common_test = "erlang_common_test", _erlang_eunit_test = "erlang_eunit_test")
 load("//private:fips_runtime_test.bzl", _elixir_fips_runtime_test = "elixir_fips_runtime_test")
+load("//private:hex_package_assets.bzl", _HexPackageAssetsInfo = "HexPackageAssetsInfo", _hex_package_assets = "hex_package_assets")
+load("//private:hex_package_info.bzl", _HexPackageInfo = "HexPackageInfo")
+load("//private:mix_escript.bzl", _MixEscriptInfo = "MixEscriptInfo", _mix_escript = "mix_escript")
 load("//private:mix_library.bzl", _mix_library = "mix_library")
 load("//private:mix_local.bzl", _mix_local = "mix_local")
 load("//private:mix_phx_assets.bzl", _mix_phx_assets = "mix_phx_assets")
@@ -24,6 +27,7 @@ load("//private:mix_task.bzl", _mix_task_test = "mix_task_test")
 load("//private:mix_test.bzl", _mix_test = "mix_test")
 load("//private:otp_crypto_sdk.bzl", _otp_crypto_sdk = "otp_crypto_sdk")
 load("//private:otp_prebuilt_release.bzl", _otp_prebuilt_release = "otp_prebuilt_release")
+load("//private:otp_runtime_smoke_test.bzl", _otp_runtime_smoke_test = "otp_runtime_smoke_test")
 load("//private:otp_source_release.bzl", _otp_source_release = "otp_source_release")
 load("//private:otp_toolchain.bzl", _otp_toolchain = "otp_toolchain")
 load("//private:rebar_library.bzl", _rebar_library = "rebar_library")
@@ -40,11 +44,17 @@ ElixirSourceInfo = _ElixirSourceInfo
 ElixirProtocolInfo = _ElixirProtocolInfo
 DialyzerPltInfo = _DialyzerPltInfo
 BeamRuntimeArchiveInfo = _BeamRuntimeArchiveInfo
+HexPackageAssetsInfo = _HexPackageAssetsInfo
+HexPackageInfo = _HexPackageInfo
+MixEscriptInfo = _MixEscriptInfo
 beam_runtime_archive = _beam_runtime_archive
 otp_prebuilt_release = _otp_prebuilt_release
+otp_runtime_smoke_test = _otp_runtime_smoke_test
 otp_crypto_sdk = _otp_crypto_sdk
 otp_source_release = _otp_source_release
 otp_toolchain = _otp_toolchain
+hex_package_assets = _hex_package_assets
+mix_escript = _mix_escript
 elixir_prebuilt_release = _elixir_prebuilt_release
 elixir_source_release = _elixir_source_release
 elixir_generated_source = _elixir_generated_source
@@ -458,6 +468,39 @@ mix_phx_assets = _mix_phx_assets
 mix_phx_digest = _mix_phx_assets
 
 mix_local = _mix_local
+
+def _mix_deps_update_impl(name, visibility, hex, **kwargs):
+    _mix_local(
+        name = name,
+        visibility = visibility,
+        mode = "mix",
+        network_policy = "online",
+        task = "deps.update",
+        task_args = ["--all"],
+        tool_deps = [hex],
+        **kwargs
+    )
+
+mix_deps_update = macro(
+    doc = "Run the explicit online Mix dependency-update workflow against the writable workspace.",
+    inherit_attrs = _mix_local,
+    attrs = {
+        "function": None,
+        "hex": attr.label(
+            mandatory = True,
+            providers = [ErlangAppInfo],
+            configurable = False,
+            doc = "Caller-resolved, checksum-pinned Hex application, normally @hex_pm//:lib.",
+        ),
+        "mode": None,
+        "module": None,
+        "network_policy": None,
+        "task": None,
+        "task_args": None,
+        "tool_deps": None,
+    },
+    implementation = _mix_deps_update_impl,
+)
 
 def _mix_iex_impl(name, visibility, **kwargs):
     _mix_local(

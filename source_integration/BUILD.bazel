@@ -5,18 +5,46 @@ load(
     "mix_library",
     "mix_release",
     "mix_test",
+    "otp_prebuilt_release",
 )
 load(":rules_fips_sdk.bzl", "rules_fips_crypto_sdk")
 
 package(default_visibility = ["//visibility:public"])
 
+otp_prebuilt_release(
+    name = "bootstrap_otp",
+    srcs = ["@bootstrap_otp_runtime//:runtime"],
+    boot_file = "@bootstrap_otp_runtime//:releases/29/start_clean.boot",
+    erlexec = "@bootstrap_otp_runtime//:erts-17.0.3/bin/erlexec",
+    exec_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    fully_static = True,
+    version = "29.0.3",
+    version_marker = "@bootstrap_otp_runtime//:releases/29/OTP_VERSION",
+)
+
+otp_prebuilt_release(
+    name = "bootstrap_otp_arm64",
+    srcs = ["@bootstrap_otp_runtime_arm64//:runtime"],
+    boot_file = "@bootstrap_otp_runtime_arm64//:releases/29/start_clean.boot",
+    erlexec = "@bootstrap_otp_runtime_arm64//:erts-17.0.3/bin/erlexec",
+    exec_compatible_with = [
+        "@platforms//cpu:arm64",
+        "@platforms//os:linux",
+    ],
+    fully_static = True,
+    version = "29.0.3",
+    version_marker = "@bootstrap_otp_runtime_arm64//:releases/29/OTP_VERSION",
+)
+
 rules_fips_crypto_sdk(name = "openssl_fips_crypto_sdk")
 
 platform(
-    name = "source_platform_x86_64",
+    name = "source_execution_x86_64",
     constraint_values = [
-        "@rules_fips//fips/platforms:openssl_fips_musl_amd64",
-        "@elixir_config//:runtime_catalog_source_x86_64",
+        "@rules_fips//fips/platforms:glibc_2_35",
         "@platforms//cpu:x86_64",
         "@platforms//os:linux",
     ],
@@ -25,15 +53,13 @@ platform(
         "EstimatedCPU": "4",
         "EstimatedMemory": "8GB",
         "OSFamily": "linux",
-        "container-image": "docker://erlang@sha256:ec20ffd1224a25f6105eec70a684fd2d7f2cf83084dedb669346644bcee4c466",
     },
 )
 
 platform(
-    name = "source_platform_arm64",
+    name = "source_execution_arm64",
     constraint_values = [
-        "@rules_fips//fips/platforms:openssl_fips_musl_arm64",
-        "@elixir_config//:runtime_catalog_source_arm64",
+        "@rules_fips//fips/platforms:glibc_2_35",
         "@platforms//cpu:arm64",
         "@platforms//os:linux",
     ],
@@ -42,8 +68,93 @@ platform(
         "EstimatedCPU": "4",
         "EstimatedMemory": "8GB",
         "OSFamily": "linux",
-        "container-image": "docker://erlang@sha256:ec20ffd1224a25f6105eec70a684fd2d7f2cf83084dedb669346644bcee4c466",
     },
+)
+
+platform(
+    name = "source_target_x86_64",
+    constraint_values = [
+        "@rules_fips//fips/platforms:musl",
+        "@rules_fips//fips/platforms:openssl_fips_musl_amd64",
+        "@elixir_config//:runtime_catalog_source_x86_64",
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+)
+
+platform(
+    name = "source_target_arm64",
+    constraint_values = [
+        "@rules_fips//fips/platforms:musl",
+        "@rules_fips//fips/platforms:openssl_fips_musl_arm64",
+        "@elixir_config//:runtime_catalog_source_arm64",
+        "@platforms//cpu:arm64",
+        "@platforms//os:linux",
+    ],
+)
+
+platform(
+    name = "source_target_glibc_x86_64",
+    constraint_values = [
+        "@rules_fips//fips/platforms:glibc_2_35",
+        "@rules_fips//fips/platforms:openssl_fips_glibc_amd64",
+        "@elixir_config//:runtime_catalog_source_glibc_x86_64",
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+)
+
+platform(
+    name = "source_target_glibc_arm64",
+    constraint_values = [
+        "@rules_fips//fips/platforms:glibc_2_35",
+        "@rules_fips//fips/platforms:openssl_fips_glibc_arm64",
+        "@elixir_config//:runtime_catalog_source_glibc_arm64",
+        "@platforms//cpu:arm64",
+        "@platforms//os:linux",
+    ],
+)
+
+config_setting(
+    name = "target_glibc_x86_64",
+    constraint_values = [
+        "@rules_fips//fips/platforms:glibc_2_35",
+        "@platforms//cpu:x86_64",
+    ],
+)
+
+config_setting(
+    name = "target_glibc_arm64",
+    constraint_values = [
+        "@rules_fips//fips/platforms:glibc_2_35",
+        "@platforms//cpu:arm64",
+    ],
+)
+
+config_setting(
+    name = "target_musl_x86_64",
+    constraint_values = [
+        "@rules_fips//fips/platforms:musl",
+        "@platforms//cpu:x86_64",
+    ],
+)
+
+config_setting(
+    name = "target_musl_arm64",
+    constraint_values = [
+        "@rules_fips//fips/platforms:musl",
+        "@platforms//cpu:arm64",
+    ],
+)
+
+filegroup(
+    name = "lazy_html_nif",
+    srcs = select({
+        ":target_glibc_arm64": ["@lazy_html_nif_glibc_arm64//:liblazy_html.so"],
+        ":target_glibc_x86_64": ["@lazy_html_nif_glibc_x86_64//:liblazy_html.so"],
+        ":target_musl_arm64": ["@lazy_html_nif_musl_arm64//:liblazy_html.so"],
+        ":target_musl_x86_64": ["@lazy_html_nif_musl_x86_64//:liblazy_html.so"],
+    }),
 )
 
 elixir_fips_runtime_test(
@@ -62,6 +173,7 @@ mix_library(
     runtime_deps = [
         "@mix_deps//:bandit",
         "@mix_deps//:jason",
+        "@mix_deps//:lazy_html",
         "@mix_deps//:phoenix",
         "@mix_deps//:phoenix_html",
         "@mix_deps//:phoenix_live_view",
@@ -103,6 +215,6 @@ elixir_release_test(
     required_paths = [
         ".rules_elixir_mix/crypto_activation.config",
         ".rules_elixir_mix/crypto_sdk/bin/crypto-activate",
-        "bin/source_integration_app.rules_fips.json",
+        "bin/source_integration_app.rules_elixir_mix.crypto.json",
     ],
 )

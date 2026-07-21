@@ -15,6 +15,10 @@ concurrency:
   group: source-catalog
   cancel-in-progress: false
 
+env:
+  BUILDBUDDY_ORG_API_KEY: ${{ secrets.BUILDBUDDY_ORG_API_KEY }}
+  BAZEL_REMOTE_FALLBACK: ${{ secrets.BUILDBUDDY_ORG_API_KEY == '' && '--remote_cache= --remote_executor= --bes_backend= --bes_results_url=' || '' }}
+
 jobs:
   update:
     runs-on: ubuntu-24.04
@@ -27,18 +31,33 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
-      - uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1.24.1
+      - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
         with:
-          otp-version: "29.0.3"
-          elixir-version: "1.20.2"
-      - name: Check catalog-updater formatting
-        run: mix format --check-formatted tools/source_catalog.ex tools/source_catalog_test.exs tools/update_source_catalog.exs
-      - name: Test the catalog updater
-        run: elixir tools/source_catalog_test.exs
+          bazelisk-version: 1.29.0
+          bazelisk-cache: true
+          disk-cache: true
+          repository-cache: true
+      - name: Validate the catalog updater with the declared BEAM toolchain
+        working-directory: integration
+        run: >-
+          bazel test
+          ${BAZEL_REMOTE_FALLBACK}
+          --platforms=//:ci_execution_platform_x86_64
+          --extra_execution_platforms=//:ci_execution_platform_x86_64
+          --remote_header=x-buildbuddy-api-key="${BUILDBUDDY_ORG_API_KEY}"
+          //:source_catalog_format
+          //:source_catalog_test
       - name: Refresh stable source releases
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: elixir tools/update_source_catalog.exs
+        working-directory: integration
+        run: >-
+          bazel run
+          ${BAZEL_REMOTE_FALLBACK}
+          --platforms=//:ci_execution_platform_x86_64
+          --extra_execution_platforms=//:ci_execution_platform_x86_64
+          --remote_header=x-buildbuddy-api-key="${BUILDBUDDY_ORG_API_KEY}"
+          //:source_catalog_update
       - name: Open or update the catalog pull request
         id: catalog_pr
         uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1

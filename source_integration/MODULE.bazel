@@ -5,8 +5,8 @@ module(
 )
 
 bazel_dep(name = "platforms", version = "1.1.0")
-bazel_dep(name = "rules_elixir_mix", version = "0.2.0")
-bazel_dep(name = "rules_fips", version = "0.2.0")
+bazel_dep(name = "rules_elixir_mix", version = "0.3.0")
+bazel_dep(name = "rules_fips", version = "0.3.0")
 
 # Direct, checksum-verified pin until rules_fips is published to BCR.
 archive_override(
@@ -21,6 +21,67 @@ local_path_override(
     path = "..",
 )
 
+prebuilt_archive = use_repo_rule(
+    "@rules_elixir_mix//repositories:prebuilt_archive.bzl",
+    "prebuilt_archive",
+)
+
+prebuilt_archive(
+    name = "bootstrap_otp_runtime",
+    archive_type = "tar.gz",
+    exported_files = [
+        "erts-17.0.3/bin/erlexec",
+        "releases/29/OTP_VERSION",
+        "releases/29/start_clean.boot",
+    ],
+    sha256 = "c44ba721fd224a0ca98ae736b2932f84f6c4d9aaf3179aeed5de555ca815d0b4",
+    urls = ["https://github.com/gleam-community/erlang-linux-builds/releases/download/OTP-29.0.3/erlang-29.0.3-x64.tar.gz"],
+)
+
+prebuilt_archive(
+    name = "bootstrap_otp_runtime_arm64",
+    archive_type = "tar.gz",
+    exported_files = [
+        "erts-17.0.3/bin/erlexec",
+        "releases/29/OTP_VERSION",
+        "releases/29/start_clean.boot",
+    ],
+    sha256 = "a3b44200d9e2137ad5f133cdc926af804dd8ac217a652802288a8a4424e8e359",
+    urls = ["https://github.com/gleam-community/erlang-linux-builds/releases/download/OTP-29.0.3/erlang-29.0.3-arm64.tar.gz"],
+)
+
+prebuilt_archive(
+    name = "lazy_html_nif_glibc_x86_64",
+    archive_type = "tar.gz",
+    exported_files = ["liblazy_html.so"],
+    sha256 = "8e4bc558f8fed8f5b766ffc4d3e566ebd1ab9ca5609dfcc4ab6b55853072702c",
+    urls = ["https://github.com/dashbitco/lazy_html/releases/download/v0.1.11/lazy_html-nif-2.16-x86_64-linux-gnu-0.1.11.tar.gz"],
+)
+
+prebuilt_archive(
+    name = "lazy_html_nif_glibc_arm64",
+    archive_type = "tar.gz",
+    exported_files = ["liblazy_html.so"],
+    sha256 = "243f5efa6a9f7270bae191cd23a132263f7fee0ae8d42b016dd7e34617840aeb",
+    urls = ["https://github.com/dashbitco/lazy_html/releases/download/v0.1.11/lazy_html-nif-2.16-aarch64-linux-gnu-0.1.11.tar.gz"],
+)
+
+prebuilt_archive(
+    name = "lazy_html_nif_musl_x86_64",
+    archive_type = "tar.gz",
+    exported_files = ["liblazy_html.so"],
+    sha256 = "223a5ace5b59ef116099503efc4352e82fffd81b2e88baf9c24a23ba6be69f75",
+    urls = ["https://github.com/dashbitco/lazy_html/releases/download/v0.1.11/lazy_html-nif-2.16-x86_64-linux-musl-0.1.11.tar.gz"],
+)
+
+prebuilt_archive(
+    name = "lazy_html_nif_musl_arm64",
+    archive_type = "tar.gz",
+    exported_files = ["liblazy_html.so"],
+    sha256 = "e954ecf55bb6d2c70ed8b5fee881e4d4ca29ccdb5990cb01aa854d0a8af2195c",
+    urls = ["https://github.com/dashbitco/lazy_html/releases/download/v0.1.11/lazy_html-nif-2.16-aarch64-linux-musl-0.1.11.tar.gz"],
+)
+
 elixir_config = use_extension(
     "@rules_elixir_mix//bzlmod:toolchains.bzl",
     "elixir_config",
@@ -28,13 +89,11 @@ elixir_config = use_extension(
 elixir_config.source_toolchain(
     name = "catalog_source_x86_64",
     bash = "@rules_fips//fips/toolchains:source_shell",
-    bootstrap_erlexec = "erts-17.0.3/bin/erlexec",
-    bootstrap_launcher = "@rules_fips//fips/toolchains:hermetic_exec",
-    bootstrap_otp_sha256 = "a636ad0585b0fe85a5dfa165ba23a9c81a67cadfdd6e2a732a1cc50c51766bcf",
-    bootstrap_otp_type = "tar.gz",
-    bootstrap_otp_url = "file:///tmp/rules-elixir-mix-ci-otp-bootstrap-x86_64.tar.gz",
-    bootstrap_otp_version = "29.0.3",
-    bootstrap_version_marker = "releases/29/OTP_VERSION",
+    bootstrap_exec_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    bootstrap_otp = "//:bootstrap_otp",
     configure_options = [
         "--disable-pgo",
         "--disable-sctp",
@@ -50,52 +109,127 @@ elixir_config.source_toolchain(
         "@platforms//os:linux",
     ],
     fips = "required",
+    jit = "disabled",
     jobs = 8,
+    libc = "musl",
     make = "@rules_fips//fips/toolchains:hermetic_make",
     make_options = ["SKIP_APPLICATIONS=wx debugger observer et reltool"],
-    perl = "@rules_fips//fips/toolchains:foreign_perl",
+    perl = "@rules_fips//fips/toolchains:hermetic_perl",
     posix_tools = ["@rules_fips//fips/toolchains:posix_tools"],
     runtime_abi = "@rules_fips//fips/platforms:openssl_fips_musl_amd64",
     static_crypto_nif = True,
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
 )
 elixir_config.source_toolchain(
     name = "catalog_source_arm64",
     bash = "@rules_fips//fips/toolchains:source_shell",
-    bootstrap_erlexec = "erts-17.0.3/bin/erlexec",
     bootstrap_exec_compatible_with = [
-        "@platforms//cpu:x86_64",
+        "@platforms//cpu:arm64",
         "@platforms//os:linux",
     ],
-    bootstrap_launcher = "@rules_fips//fips/toolchains:hermetic_exec",
-    bootstrap_otp_sha256 = "a636ad0585b0fe85a5dfa165ba23a9c81a67cadfdd6e2a732a1cc50c51766bcf",
-    bootstrap_otp_type = "tar.gz",
-    bootstrap_otp_url = "file:///tmp/rules-elixir-mix-ci-otp-bootstrap-x86_64.tar.gz",
-    bootstrap_otp_version = "29.0.3",
-    bootstrap_version_marker = "releases/29/OTP_VERSION",
+    bootstrap_otp = "//:bootstrap_otp_arm64",
     configure_options = [
-        "--build=x86_64-pc-linux-gnu",
         "--disable-pgo",
         "--disable-sctp",
-        "--host=aarch64-unknown-linux-musl",
         "--without-javac",
         "--without-odbc",
         "--without-termcap",
         "--without-wx",
     ],
-    cross_compile = True,
     crypto_sdk = "//:openssl_fips_crypto_sdk",
     exec_compatible_with = [
         "@platforms//cpu:arm64",
         "@platforms//os:linux",
     ],
     fips = "required",
+    jit = "required",
     jobs = 8,
+    libc = "musl",
     make = "@rules_fips//fips/toolchains:hermetic_make",
     make_options = ["SKIP_APPLICATIONS=wx debugger observer et reltool"],
-    perl = "@rules_fips//fips/toolchains:foreign_perl",
+    perl = "@rules_fips//fips/toolchains:hermetic_perl",
     posix_tools = ["@rules_fips//fips/toolchains:posix_tools"],
     runtime_abi = "@rules_fips//fips/platforms:openssl_fips_musl_arm64",
     static_crypto_nif = True,
+    target_compatible_with = [
+        "@platforms//cpu:arm64",
+        "@platforms//os:linux",
+    ],
+)
+elixir_config.source_toolchain(
+    name = "catalog_source_glibc_x86_64",
+    bash = "@rules_fips//fips/toolchains:source_shell",
+    bootstrap_exec_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    bootstrap_otp = "//:bootstrap_otp",
+    configure_options = [
+        "--disable-pgo",
+        "--disable-sctp",
+        "--without-javac",
+        "--without-odbc",
+        "--without-termcap",
+        "--without-wx",
+    ],
+    crypto_sdk = "//:openssl_fips_crypto_sdk",
+    exec_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    fips = "required",
+    jit = "required",
+    jobs = 8,
+    libc = "glibc",
+    make = "@rules_fips//fips/toolchains:hermetic_make",
+    make_options = ["SKIP_APPLICATIONS=wx debugger observer et reltool"],
+    perl = "@rules_fips//fips/toolchains:hermetic_perl",
+    posix_tools = ["@rules_fips//fips/toolchains:posix_tools"],
+    runtime_abi = "@rules_fips//fips/platforms:openssl_fips_glibc_amd64",
+    static_crypto_nif = True,
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+)
+elixir_config.source_toolchain(
+    name = "catalog_source_glibc_arm64",
+    bash = "@rules_fips//fips/toolchains:source_shell",
+    bootstrap_exec_compatible_with = [
+        "@platforms//cpu:arm64",
+        "@platforms//os:linux",
+    ],
+    bootstrap_otp = "//:bootstrap_otp_arm64",
+    configure_options = [
+        "--disable-pgo",
+        "--disable-sctp",
+        "--without-javac",
+        "--without-odbc",
+        "--without-termcap",
+        "--without-wx",
+    ],
+    crypto_sdk = "//:openssl_fips_crypto_sdk",
+    exec_compatible_with = [
+        "@platforms//cpu:arm64",
+        "@platforms//os:linux",
+    ],
+    fips = "required",
+    jit = "required",
+    jobs = 8,
+    libc = "glibc",
+    make = "@rules_fips//fips/toolchains:hermetic_make",
+    make_options = ["SKIP_APPLICATIONS=wx debugger observer et reltool"],
+    perl = "@rules_fips//fips/toolchains:hermetic_perl",
+    posix_tools = ["@rules_fips//fips/toolchains:posix_tools"],
+    runtime_abi = "@rules_fips//fips/platforms:openssl_fips_glibc_arm64",
+    static_crypto_nif = True,
+    target_compatible_with = [
+        "@platforms//cpu:arm64",
+        "@platforms//os:linux",
+    ],
 )
 use_repo(elixir_config, "elixir_config")
 
@@ -106,12 +240,23 @@ elixir_packages = use_extension(
 elixir_packages.mix_lock(
     name = "mix_deps",
     lockfile = "//:mix.lock",
+    precompiled_native_files = {
+        "lazy_html": "//:lazy_html_nif",
+    },
 )
 use_repo(elixir_packages, "hex_pm", "mix_deps")
 
 register_toolchains(
     "@elixir_config//catalog_source_arm64:otp_toolchain",
+    "@elixir_config//catalog_source_arm64:test_toolchain",
     "@elixir_config//catalog_source_arm64:toolchain",
+    "@elixir_config//catalog_source_glibc_arm64:otp_toolchain",
+    "@elixir_config//catalog_source_glibc_arm64:test_toolchain",
+    "@elixir_config//catalog_source_glibc_arm64:toolchain",
+    "@elixir_config//catalog_source_glibc_x86_64:otp_toolchain",
+    "@elixir_config//catalog_source_glibc_x86_64:test_toolchain",
+    "@elixir_config//catalog_source_glibc_x86_64:toolchain",
     "@elixir_config//catalog_source_x86_64:otp_toolchain",
+    "@elixir_config//catalog_source_x86_64:test_toolchain",
     "@elixir_config//catalog_source_x86_64:toolchain",
 )

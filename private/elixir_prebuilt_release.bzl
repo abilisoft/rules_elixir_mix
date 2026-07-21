@@ -17,6 +17,17 @@ def _elixir_prebuilt_release_impl(ctx):
     version_file = ctx.actions.declare_file(ctx.label.name + "_version")
     state = ctx.actions.declare_directory(ctx.label.name + "_verification_state")
     activation = prepare_crypto_runtime(ctx, otp_info, ctx.label.name + "_crypto_state")
+    symlink_expression = "".join([
+        "{ok,artifact_normalizer,N}=compile:file(",
+        _erl_string(ctx.file._normalizer.path),
+        ",[binary,report_errors,report_warnings])",
+        ",{module,artifact_normalizer}=code:load_binary(artifact_normalizer,",
+        _erl_string(ctx.file._normalizer.path),
+        ",N)",
+        ",ok=artifact_normalizer:assert_contained_symlinks(",
+        _erl_string(elixir_home),
+        ")",
+    ])
     expression = "File.mkdir_p!({state});expected={expected};^expected=File.read!({marker})|>String.trim();^expected=System.version();File.write!({output},expected<>\"\\n\");File.rm_rf!({state});File.mkdir_p!({state})".format(
         expected = _erl_string(ctx.attr.version),
         marker = _erl_string(ctx.file.version_marker.path),
@@ -28,6 +39,8 @@ def _elixir_prebuilt_release_impl(ctx):
         "-noshell",
         "+fnu",
     ] + fips_erl_args(otp_info, activate = False) + [
+        "-eval",
+        symlink_expression,
         "-s",
         "elixir",
         "start_cli",
@@ -49,7 +62,10 @@ def _elixir_prebuilt_release_impl(ctx):
     ctx.actions.run(
         executable = execution_erlexec(otp_info),
         arguments = [args],
-        inputs = depset(direct = ctx.files.srcs, transitive = [otp_info.runtime_files, activation.files]),
+        inputs = depset(
+            direct = ctx.files.srcs + [ctx.file._normalizer],
+            transitive = [otp_info.runtime_files, activation.files],
+        ),
         outputs = [version_file, state],
         env = environment,
         execution_requirements = {"block-network": "1"},
@@ -95,6 +111,10 @@ elixir_prebuilt_release = rule(
         "otp": attr.label(
             mandatory = True,
             providers = [[OtpInfo], [platform_common.ToolchainInfo]],
+        ),
+        "_normalizer": attr.label(
+            default = Label("//private:artifact_normalizer.erl"),
+            allow_single_file = [".erl"],
         ),
     },
 )

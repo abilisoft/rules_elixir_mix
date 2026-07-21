@@ -3,6 +3,7 @@
 load("//private:beam_info.bzl", "ErlangAppInfo", "compile_depset", "flat_compile_deps", "path_join", "runtime_depset", "type_depset")
 load("//private:elixir_priv.bzl", "ElixirPrivInfo")
 load("//private:elixir_source.bzl", "ElixirSourceInfo")
+load("//private:hex_package_info.bzl", "HEX_PACKAGE_ATTRS", "hex_package_info")
 load("//private:mix_execution.bzl", "run_mix_action")
 load("//private:mix_info.bzl", "MixProjectInfo")
 load("//private:native_build.bzl", "NATIVE_EXEC_GROUP", "native_build_context", "use_native_cc_toolchain")
@@ -149,6 +150,10 @@ def _mix_compile_impl(ctx):
         ))
     for target in ctx.attr.priv_entries:
         priv_entries.extend(target[ElixirPrivInfo].entries)
+    priv_project_entries = [
+        struct(destination = "priv/" + entry.destination, source = entry.source)
+        for entry in priv_entries
+    ]
     priv_manifest = _write_mapping_manifest(ctx, "priv", priv_entries)
     include_entries = [
         struct(destination = _header_destination(file), source = file)
@@ -189,8 +194,8 @@ def _mix_compile_impl(ctx):
         build_root = build_root.path,
         deps = flat_compile_deps(ctx.attr.compile_deps + ctx.attr.type_deps + ctx.attr.runtime_deps),
         inputs = source_files + generated_files + ctx.files.include + ctx.files.precompiled_native_artifacts + [entry.source for entry in priv_entries] + project_files + [ctx.file._artifact_normalizer] + ([priv_manifest] if priv_manifest else []) + ([include_manifest] if include_manifest else []) + ([precompiled_native_manifest] if precompiled_native_manifest else []),
-        project_inputs = source_files + generated_files + ctx.files.include + ctx.files.priv + project_files,
-        project_entries = generated_entries,
+        project_inputs = source_files + generated_files + ctx.files.include + [entry.source for entry in priv_entries] + project_files,
+        project_entries = generated_entries + priv_project_entries,
         outputs = [build_root, fingerprint, project_fingerprint],
         internal_env = internal_env,
         user_env = env,
@@ -271,14 +276,21 @@ def _mix_library_info_impl(ctx):
     ]
     generated_files = [entry.source for entry in generated_entries]
     source_files = _exclude_generated_destinations(ctx.files.srcs, ctx.file.mix_config, generated_entries)
-    all_project_files = project_files + source_files + generated_files + ctx.files.priv
-    project_entries = _project_entries(all_project_files, ctx.file.mix_config, generated_entries)
-
-    mapped_priv = [
-        entry.source
+    priv_entries = [
+        struct(destination = _priv_destination(file), source = file)
+        for file in ctx.files.priv
+    ] + [
+        entry
         for target in ctx.attr.priv_entries
         for entry in target[ElixirPrivInfo].entries
     ]
+    mapped_priv = [entry.source for entry in priv_entries]
+    priv_project_entries = [
+        struct(destination = "priv/" + entry.destination, source = entry.source)
+        for entry in priv_entries
+    ]
+    all_project_files = project_files + source_files + generated_files + mapped_priv
+    project_entries = _project_entries(all_project_files, ctx.file.mix_config, generated_entries + priv_project_entries)
     runfiles = ctx.runfiles(files = build_roots)
     for dep in ctx.attr.runtime_deps:
         runfiles = runfiles.merge(dep[DefaultInfo].default_runfiles)
@@ -287,7 +299,7 @@ def _mix_library_info_impl(ctx):
     runtime_deps = runtime_depset(ctx.attr.runtime_deps)
     type_deps = type_depset(ctx.attr.type_deps + ctx.attr.runtime_deps)
 
-    return [
+    providers = [
         DefaultInfo(
             files = depset(build_roots),
             runfiles = runfiles,
@@ -316,7 +328,7 @@ def _mix_library_info_impl(ctx):
             extra_apps = [],
             include = ctx.files.include,
             license_files = [],
-            priv = ctx.files.priv + mapped_priv,
+            priv = mapped_priv,
             project_entries = project_entries,
             project_files = all_project_files,
             project_fingerprint = ctx.attr.compile[_MixCompileInfo].project_fingerprint,
@@ -326,6 +338,10 @@ def _mix_library_info_impl(ctx):
             srcs = source_files + generated_files + ctx.files.config,
         ),
     ]
+    package = hex_package_info(ctx, ctx.attr.app_name, project_entries, all_project_files)
+    if package:
+        providers.append(package)
+    return providers
 
 _mix_library_info = rule(
     implementation = _mix_library_info_impl,
@@ -345,7 +361,7 @@ _mix_library_info = rule(
         "priv_entries": attr.label_list(providers = [ElixirPrivInfo]),
         "include": attr.label_list(allow_files = [".hrl"]),
         "lockfile": attr.label(allow_single_file = True),
-    },
+    } | HEX_PACKAGE_ATTRS,
 )
 
 def _mix_library_impl(name, visibility, **kwargs):
@@ -365,7 +381,7 @@ def _mix_library_impl(name, visibility, **kwargs):
         "precompiled_native_artifacts",
         "warnings_as_errors",
     ]
-    info_keys = ["mix_env", "srcs", "config", "data", "generated_srcs", "include"]
+    info_keys = ["mix_env", "srcs", "config", "data", "generated_srcs", "include"] + HEX_PACKAGE_ATTRS.keys()
     common_keys = [
         "compatible_with",
         "exec_compatible_with",
@@ -441,6 +457,6 @@ mix_library = macro(
             doc = "Compile-only applications whose remote types are referenced by this application.",
         ),
         "tags": attr.string_list(configurable = False),
-    },
+    } | HEX_PACKAGE_ATTRS,
     implementation = _mix_library_impl,
 )

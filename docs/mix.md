@@ -42,6 +42,8 @@ Important attributes:
   `@hex_pm//:lib`. Repository mapping is resolved in the caller.
 - `precompiled_native_artifacts`: checksum-pinned archives staged in an
   isolated `ELIXIR_MAKE_CACHE_DIR` before compilation.
+- `precompiled_native_files`: exact, checksum-owned native files mapped
+  directly to package-relative destinations such as `priv/native.so`.
 - `native_build`: opt one application into the selected execution platform's
   registered C/C++ toolchain and declared Bash/Make/Perl/POSIX closure.
 
@@ -76,12 +78,40 @@ packages.mix_lock(
 )
 ```
 
-The repository download is checksum-pinned; the Mix action itself remains
-offline. For a package that must compile native sources, list its Hex package
-name in `native_build_packages`. The lockfile's advertised build-tool list is
-not used as an automatic signal because packages often advertise multiple
-alternative managers. Native flags and tools affect only the selected package
-action, not every BEAM dependency:
+When the producer publishes a known library directly inside a larger archive,
+prefer a topology-validated `prebuilt_archive` projection and map that file to
+its package-relative destination:
+
+```starlark
+prebuilt_archive = use_repo_rule(
+    "@rules_elixir_mix//repositories:prebuilt_archive.bzl",
+    "prebuilt_archive",
+)
+prebuilt_archive(
+    name = "native_nif_linux_x86_64_musl",
+    exported_files = ["lib/package_nif.so"],
+    sha256 = "...",
+    urls = ["https://producer.example/package-nif.tar.gz"],
+)
+
+packages.mix_lock(
+    name = "mix_deps",
+    lockfile = "//:mix.lock",
+    precompiled_native_files = {
+        "package": {
+            "@native_nif_linux_x86_64_musl//:lib/package_nif.so": "priv/package_nif.so",
+        },
+    },
+)
+```
+
+Both forms remain checksum-pinned and the Mix action stays offline. Direct
+files avoid package-specific extraction logic when the producer's archive
+layout is already known. For a package that must compile native sources, list
+its Hex package name in `native_build_packages`. The lockfile's advertised
+build-tool list is not used as an automatic signal because packages often
+advertise multiple alternative managers. Native flags and tools affect only
+the selected package action, not every BEAM dependency:
 
 ```starlark
 packages.mix_lock(
@@ -96,6 +126,17 @@ matching Bazel C/C++ toolchain must resolve on the same execution platform.
 `rules_fips` may produce that musl/glibc compiler and POSIX closure;
 `rules_elixir_mix` only consumes it. There is no fallback to `/usr/bin`, the
 host `PATH`, a host compiler, or a host crypto library.
+
+A fully static OTP runtime cannot dynamically load application NIFs. Static
+crypto-NIF linkage is independent: it may embed OTP's crypto NIF while the BEAM
+runtime itself remains a wrapped dynamic executable capable of loading
+LazyHTML, Rustler, and other application NIFs. Select that wrapped dynamic
+profile for Phoenix LiveView applications that depend on native packages.
+
+Optional Hex dependencies do not enter another package's compile or runtime
+closure automatically. Select the optional package explicitly through the
+generated dependency hub when the application enables the corresponding
+feature. The lock remains the sole version and integrity authority.
 
 ## Tests and analysis
 
@@ -139,6 +180,60 @@ the BCR module, or OTP/Elixir prebuilt archives. Requiring executable labels on
 the test target prevents undeclared host discovery and makes the selected
 service binaries part of the test cache key.
 
+## Locked package assets
+
+Generated dependency targets carry the identity and complete source mapping of
+their checksum-pinned Hex archive. Use `hex_package_assets` when another Bazel
+ecosystem needs a file from that archive:
+
+```starlark
+load("@rules_elixir_mix//:defs.bzl", "hex_package_assets")
+
+hex_package_assets(
+    name = "live_view_javascript",
+    package = "@mix_deps//:phoenix_live_view",
+    paths = ["priv/static/phoenix_live_view.esm.js"],
+)
+```
+
+The public dependency-hub label remains stable; consumers never address the
+module extension's private canonical repository name. A missing or normalized-
+path-escaping asset fails during analysis. The selected file and its package
+checksum identity remain owned by `mix.lock`, so a JavaScript or CSS rule does
+not need a duplicate package-manager dependency.
+
+## Escript tools
+
+`mix_escript` turns an already compiled `mix_library` into an executable Bazel
+tool. It stages the declared compile closure only to evaluate the project's
+existing `escript` configuration, embeds the runtime dependency closure, and
+runs `mix escript.build` offline without recompiling the application:
+
+```starlark
+load("@rules_elixir_mix//:defs.bzl", "mix_escript")
+
+mix_escript(
+    name = "schema_generator",
+    lib = "@mix_deps//:schema_generator",
+    output_name = "schema-gen",
+)
+```
+
+`output_name` is optional and defaults to the Bazel target name. The result has
+an executable `FilesToRunProvider`, so another rule may declare it as
+`attr.label(executable = True, cfg = "exec")` and pass
+`ctx.attr.tool[DefaultInfo].files_to_run` in `tools`. The output uses the
+selected OTP runtime from runfiles, not `/usr/bin/env`, a host Elixir/Mix
+installation, or a shell adapter. Sources, package locks, compiled dependency
+artifacts, OTP/Elixir toolchains, FIPS policy, and provider runtime files are
+all action inputs or configuration, so their changes invalidate the cache.
+
+An escript used as a build tool is analyzed in the execution configuration.
+Register an execution platform on which its OTP toolchain resolves; do not
+pretend a target musl ABI is the worker ABI. A fully bundled runtime wrapper
+may make the runtime independent of the worker libc, but CPU and OS constraints
+still apply.
+
 ## Phoenix and local development
 
 Writable Phoenix servers, code reloaders, and generators are intentionally
@@ -158,3 +253,24 @@ generated file only when its last staged content is still unchanged.
 `mix_iex` and `elixir_ls` use the same local graph; the latter expects the
 caller to provide ElixirLS as an ordinary Mix dependency and runs its
 language-server CLI without maintaining a second build tree.
+
+Dependency maintenance is the one deliberately online local workflow. Declare
+it explicitly so network policy is visible in the BUILD graph:
+
+```starlark
+load("@rules_elixir_mix//:defs.bzl", "mix_deps_update")
+
+mix_deps_update(
+    name = "update_mix_dependencies",
+    hex = "@hex_pm//:lib",
+    lib = ":app",
+)
+```
+
+`bazel run //:update_mix_dependencies` executes `mix deps.update --all` against
+the writable workspace with `HEX_OFFLINE=false`, using only the selected
+declared OTP, Elixir, Mix, Hex, and dependency inputs. Ordinary `mix_local`
+targets default to `HEX_OFFLINE=true`; build and test actions remain
+network-blocked regardless of this local-only API. The explicit `hex` label is
+mandatory so the workflow cannot invoke Mix's ambient Hex installer or borrow a
+host archive.

@@ -52,24 +52,64 @@ beam.source_toolchain(
     bootstrap_otp_url = "https://artifacts.example/otp-bootstrap.tar.gz",
     bootstrap_otp_sha256 = "<64-hex-sha256>",
     bootstrap_erlexec = "erts-17.0.3/bin/erlexec",
-    bootstrap_launcher = "@native_platform//:hermetic_exec",
+    bootstrap_boot_file = "releases/29/start_clean.boot",
+    bootstrap_otp_fully_static = True,
     bash = "@native_platform//:bash",
     make = "@native_platform//:make",
+    otp_fully_static = True,
     perl = "@native_platform//:perl",
     posix_tools = ["@native_platform//:tools"],
     exec_compatible_with = [
         "@platforms//cpu:x86_64",
         "@platforms//os:linux",
     ],
+    libc = "glibc",
     runtime_abi = "//platforms:otp29_elixir120_linux_x86_64",
 )
 ```
+
+`bootstrap_boot_file` supports pre-install archives that contain
+`releases/<major>/start_clean.boot` but no installed `bin/start.boot`. Its
+extensionless declared path is passed through `ERL_AFLAGS`, including nested
+bootstrap launches, and no archive installer is executed.
+
+The URL bootstrap form requires `bootstrap_otp_fully_static = True`, and the
+generated prebuilt rule verifies every executable ELF and recursively resolves
+every NIF/shared-object dependency from declared archive inputs before the
+expensive source build begins. A dynamically linked bootstrap must be a
+provider-backed `OtpInfo` target that owns its complete normalized execution
+closure. A wrapper around only `erlexec` is insufficient because `beam.smp`,
+OTP port programs, and loadable NIFs have independent native dependencies.
+
+Another Bazel rule may own the complete bootstrap runtime instead of an HTTP
+archive:
+
+```starlark
+beam.source_toolchain(
+    name = "beam_source",
+    bootstrap_otp = "//toolchains:otp_29_bootstrap",
+    bootstrap_exec_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    # Remaining source and native-tool attributes omitted.
+)
+```
+
+The provider target must expose `OtpInfo`; archive metadata and
+`bootstrap_otp` are mutually exclusive. Every generated source toolchain also
+exports `@elixir_config//<name>:bootstrap_smoke_test`. Run that focused target
+before the expensive source build to surface an incompatible loader, libc, or
+CPU without host fallback.
 
 Set `otp_version` or `elixir_version` to another cataloged value when needed.
 For a version absent from the catalog, set that language's `*_url` and
 `*_sha256` together; optional `*_strip_prefix` and `*_type` then describe the
 custom archive. Mirrors belong in `otp_urls` or `elixir_urls`. Partial
 overrides fail during module-extension evaluation.
+Custom URLs must use HTTPS, digests must be lowercase SHA-256, extraction
+prefixes must be normalized relative paths, and extracted trees reject
+dangling or escaping symlinks.
 
 The catalog deliberately does not cover prebuilt runtimes. Those bytes depend
 on the producer, target platform, libc, loader, NIF ABI, and native closure, so
@@ -88,10 +128,33 @@ The current runtime and static-linkage verifier are Linux-specific. Generated
 toolchains therefore require `@platforms//os:linux` for both execution and
 target platforms instead of advertising an unverified portable runtime.
 Every toolchain tag also requires a dedicated `runtime_abi` constraint value.
-The source-build action and all consuming actions resolve on a platform bearing
-that value, which makes the selected libc, loader, C toolchain/NIF ABI, and
-native runtime image part of toolchain resolution rather than ambient worker
-state. Execution platforms should bind the value to a digest-pinned image.
+That value constrains the produced runtime and its consumers only; it is not
+added to `exec_compatible_with`. The build host is described independently by
+the caller's execution OS, CPU, and declared tool closures. This permits, for
+example, an x86-64 glibc worker to produce an x86-64 musl runtime without
+falsely labeling the worker as musl.
+
+Each generated profile also exports a Bazel test toolchain. Register it with
+the OTP and Elixir toolchains. Bazel 9 otherwise applies a test's target
+constraints to its execution platform before the rule's declared runtime
+wrapper can start the target-ABI BEAM. The generated test toolchain binds test
+execution to the real build-host OS and CPU while retaining the produced
+runtime ABI on the target. It does not advertise musl or FIPS as properties of
+a GNU worker.
+
+`libc` describes the produced runtime and is independent from the build-host
+ABI. For x86-64 musl, set `jit = "disabled"`. The extension rejects `auto` or
+`required` because OTP's x86 JIT can exceed musl's fixed signal stack on hosts
+with a large `AT_MINSIGSTKSZ`. The generated smoke target verifies the emulator
+flavor. glibc and Arm64 profiles may request `jit = "required"` and are checked
+the same way.
+
+Separation is not permission to use the host. The selected C/C++ toolchain,
+sysroot, compiler runtime, Bash, Make, Perl, POSIX tools, bootstrap runtime,
+loader wrapper, and crypto SDK must still be declared inputs. A source build
+that needs to execute a target-ABI bootstrap on a different execution ABI must
+use a provider-backed bootstrap with its own execution overlay and declare
+`bootstrap_exec_compatible_with`; it never discovers a host loader or library.
 
 The repository that produces the native platform owns that complete closure.
 For a FIPS deployment, `rules_fips` may provide the musl or glibc C/C++
@@ -100,6 +163,18 @@ toolchain, linker, declared POSIX tools, normalized crypto SDK, and matching
 those components. It consumes their Bazel targets while building pristine OTP
 and Elixir sources. This prevents a second, subtly different libc or crypto
 build from appearing here.
+
+The source rule requires exactly one native-runtime contract. A dynamic SDK
+must provide both target and execution wrappers; after verification, the OTP
+driver replaces every dynamic executable in the installed tree with that
+declared static wrapper and retains the real program beside it. This includes
+port programs outside `erts-*/bin` and survives deterministic archive
+assembly. For a source profile whose C/C++ toolchain produces only static
+executables, set `otp_fully_static = True`; the driver scans the complete
+installed tree and fails if any executable ELF still has an interpreter. Both
+contracts also parse every ELF in the installed runtime and recursively require
+each `DT_NEEDED` library to resolve uniquely from the runtime or declared SDK.
+Absolute/escaping archive symlinks and host-library fallback fail verification.
 
 ## Native tool handoff
 
@@ -116,7 +191,11 @@ represent repository inputs as symlinks into its content-addressed cache;
 preserving those links would allow upstream configure or Make steps to mutate
 declared inputs. A Starlark repository rule also records empty directories from
 the checksum-pinned archive so the staged source topology matches upstream
-without shell traversal.
+without shell traversal. OTP and Elixir language/runtime sources are not
+patched. In the writable staging copy, interpreter headers and generated
+launcher references are rebound to the declared Bash, Perl, and escript tools;
+otherwise upstream `/bin/sh` and `/usr/bin/env` shebangs would escape the
+hermetic action. Those launchers are not the consumer API.
 
 ## Crypto selection
 
@@ -153,11 +232,15 @@ otp_crypto_sdk(
         "@crypto//:fips_module",
         "@crypto//:openssl_config",
         "@crypto//:openssl_for_target",
+        "@crypto//:runtime_libraries",
+        "@crypto//:runtime_wrapper_target",
     ],
     runtime_destinations = [
         "lib/ossl-modules/fips.so",
         "ssl/openssl.cnf",
         "bin/openssl",
+        "lib",
+        "bin/runtime-launch",
     ],
     runtime_environment = {
         "OPENSSL_CONF": "{sysroot}/ssl/openssl.cnf",
@@ -174,6 +257,16 @@ otp_crypto_sdk(
         "-module",
         "{sysroot}/lib/ossl-modules/fips.so",
     ],
+    cc_features = ["rules_fips_dynamic_executable"],
+    build_elf_interpreter = "/__bazel_hermetic_runtime__/declared-loader",
+    execution_exec_wrapper = "@crypto//:runtime_wrapper_exec",
+    execution_wrapper = "@crypto//:runtime_wrapper_target",
+    execution_wrapper_environment = {
+        "RULES_CRYPTO_RUNTIME_LIBRARY_PATH": "{sysroot}/lib",
+        "RULES_CRYPTO_RUNTIME_LOADER": "{sysroot}/lib/ld-runtime.so.1",
+        "RULES_CRYPTO_RUNTIME_PROGRAM": "{program}",
+    },
+    execution_wrapper_release_path = "bin/runtime-launch",
 )
 ```
 
@@ -185,6 +278,17 @@ The activation command is a declared executable and argument vector; it never
 passes through a shell. The execution-configured activation tool and the
 release-packaged activation executable may be different builds, but both must
 come from declared SDK artifacts.
+
+For a provider-backed SDK whose OTP build executables are dynamically linked,
+`build_elf_interpreter` is the fail-closed marker emitted by the selected C/C++
+toolchain. The source driver replaces that linker argument with the declared
+SDK loader while building, then normalizes installed real executables to
+deliberately unusable, execroot-independent interpreter and runpath markers.
+Only the adjacent static wrapper may start them, using the SDK's declared
+loader and libraries. `cc_features` lets the producer opt only OTP executable
+link actions into that dynamic contract; shared-library actions must never
+inherit an executable-only `-static` flag. Fully static SDKs may not declare
+any of these runtime fields.
 
 With `fips = "required"` and `static_crypto_nif = True`, the OTP source action
 owns these upstream configure flags:

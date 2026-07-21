@@ -21,6 +21,11 @@ otp_prebuilt_release(
     name = "otp",
     srcs = [":otp_files"],
     erlexec = "runtime/otp/erts-17.0.3/bin/erlexec",
+    exec_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    fully_static = True,
     version = "29.0.3",
     version_marker = "runtime/otp/releases/29/OTP_VERSION",
 )

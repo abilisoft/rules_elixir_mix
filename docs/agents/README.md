@@ -70,9 +70,13 @@ or tag.
 
 ### 2. Define the execution platform
 
-Define a dedicated `runtime_abi` constraint value and put it on both the
-toolchain and its execution platform. OS and CPU alone are insufficient for a
-native BEAM runtime. Pin any remote-execution container by immutable digest.
+Define a dedicated `runtime_abi` constraint value for the produced runtime and
+its consumers. Do not put a target musl/glibc ABI on the execution platform
+unless that platform genuinely has that ABI for unrelated execution tools.
+OS and CPU alone are insufficient for a native BEAM runtime; execution OS/CPU
+and target runtime ABI are separate contracts. Pin any remote-execution
+container by immutable digest, but never use the container as an excuse for an
+undeclared compiler, loader, or library.
 
 Stop if the runtime archive's libc, loader, NIF ABI, or native library closure
 is unknown. Do not label an unverified archive as compatible.
@@ -114,6 +118,11 @@ build and test actions are offline; they must not run `mix deps.get`.
 Use `native_build_packages` only for specifically named locked packages that
 must compile native source. Prefer `precompiled_native_artifacts` when a
 checksum-pinned producer already owns the native artifact.
+Use `precompiled_native_files` when an integrity-pinned, topology-validated
+archive exports the exact native file and its package-relative destination is
+known. A fully static BEAM cannot load application NIFs; use a declared wrapped
+dynamic runtime when Phoenix LiveView, LazyHTML, Rustler, or another package
+loads one.
 
 ### 5. Model one OTP application per target
 
@@ -124,6 +133,8 @@ Map each application to one of these public APIs:
 | Mix application | `mix_library` |
 | Direct Erlang/OTP application | `erlang_app` |
 | Imported Rebar application | `rebar_library` |
+| Exact source asset from a locked Hex package | `hex_package_assets` |
+| Mix package used as a Bazel executable tool | `mix_escript` |
 
 For an umbrella, create separate targets for the child applications. Do not
 stage an entire repository into one action and invoke a catch-all Mix build.
@@ -181,6 +192,10 @@ configuration must also exist.
 Phoenix and LiveView remain locked Mix dependencies, not toolchains.
 
 - Build JavaScript and CSS with the appropriate Bazel ecosystem rules.
+- Project framework-owned source assets through `hex_package_assets`; never
+  address a private extension repository or resolve a duplicate npm package.
+- Build Mix code-generator CLIs with `mix_escript` and consume their
+  `FilesToRunProvider` in the execution configuration.
 - Use `mix_phx_assets` or `mix_phx_digest` for cacheable `phx.digest` output.
 - Feed the digested `priv` payload into the application graph.
 - Use `mix_release` for immutable release assembly.
@@ -221,7 +236,8 @@ Before calling the integration complete, verify all of the following:
   their immutable archives, and submits reviewable signed pull requests;
 - the action does not discover executables through the host `PATH`;
 - build and test actions do not access the network;
-- no action runs `mix deps.get` or mutates `mix.lock`;
+- no build or test action runs `mix deps.get` or mutates `mix.lock`; only an
+  explicit `mix_deps_update` local workflow may update the workspace lock;
 - all read files, environment values, tools, native libraries, and service
   executables affect the action inputs or configuration;
 - the runtime resolves only on a matching OS, CPU, and `runtime_abi` platform;
@@ -256,7 +272,7 @@ prove compatibility with an undeclared worker image.
 Finish with evidence, not a generic success statement. Report:
 
 1. the ruleset revision and OTP/Elixir toolchain selected;
-2. the execution platform and `runtime_abi` assumption;
+2. the independent execution-platform and target `runtime_abi` assumptions;
 3. the application targets and dependency-edge decisions;
 4. the build, test, analysis, release, and local-workflow targets added;
 5. the exact validation commands that passed;

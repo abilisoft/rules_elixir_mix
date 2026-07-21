@@ -20,13 +20,6 @@ def _cc_toolchain(ctx):
         return toolchain.cc
     return toolchain
 
-def _dedupe(values):
-    result = []
-    for value in values:
-        if value not in result:
-            result.append(value)
-    return result
-
 def _execution_root_path(path):
     return path if path.startswith("/") else _EXECUTION_ROOT_MARKER + path
 
@@ -87,7 +80,7 @@ def _compile_configuration(ctx, cc_toolchain, feature_configuration, action_name
             feature_configuration = feature_configuration,
             variables = variables,
         ),
-        flags = _dedupe(flags),
+        flags = flags,
     )
 
 def _link_configuration(ctx, cc_toolchain, feature_configuration, action_name, dynamic):
@@ -109,7 +102,7 @@ def _link_configuration(ctx, cc_toolchain, feature_configuration, action_name, d
             feature_configuration = feature_configuration,
             variables = variables,
         ),
-        flags = _dedupe(flags + ctx.fragments.cpp.linkopts + ctx.attr.native_linkopts),
+        flags = flags + ctx.fragments.cpp.linkopts + ctx.attr.native_linkopts,
     )
 
 def _archive_configuration(cc_toolchain, feature_configuration):
@@ -155,7 +148,7 @@ def _action_flags_without_io(flags, markers):
                 result.pop()
             continue
         result.append(flag)
-    return _dedupe(result)
+    return result
 
 def _rewrite_path_token(token):
     if not token or token.startswith("/") or token.startswith("-"):

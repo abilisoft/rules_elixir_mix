@@ -7,13 +7,16 @@
 
 -include_lib("kernel/include/file.hrl").
 
-main([Kind, Version, Root0, PackageDir, Archive0, Sha256Path0, MetadataPath0]) ->
+main([Kind, Version, NativeContract, DependencyRoot0, Root0, PackageDir, Archive0, Sha256Path0,
+      MetadataPath0]) ->
     Root = normalized_absolute(Root0),
+    DependencyRoot = normalized_absolute(DependencyRoot0),
     Archive = filename:absname(Archive0),
     Sha256Path = filename:absname(Sha256Path0),
     MetadataPath = filename:absname(MetadataPath0),
     ok = validate_package_dir(PackageDir),
     {ok, #file_info{type = directory}} = file:read_link_info(Root),
+    ok = validate_native_contract(Kind, NativeContract, Root, DependencyRoot),
     Entries = collect(Root, ""),
     true = Entries =/= [],
     ok = ensure_parent(Archive),
@@ -39,11 +42,22 @@ main([Kind, Version, Root0, PackageDir, Archive0, Sha256Path0, MetadataPath0]) -
     Digest = sha256(Archive),
     HexDigest = hex(Digest),
     ok = file:write_file(Sha256Path, [HexDigest, "\n"]),
-    RuntimeMetadata = runtime_metadata(Kind, Version, Root),
+    RuntimeMetadata = runtime_metadata(Kind, Version, NativeContract, Root),
     ok = file:write_file(
         MetadataPath,
         metadata_json(Kind, Version, PackageDir, filename:basename(Archive), HexDigest, RuntimeMetadata)
     ),
+    ok.
+
+validate_native_contract("otp", "static", Root, DependencyRoot) ->
+    ok = artifact_normalizer:assert_static_executables(Root),
+    artifact_normalizer:assert_declared_elf_closure(Root, [DependencyRoot]);
+validate_native_contract("otp", "wrapped", Root, DependencyRoot) ->
+    ok = artifact_normalizer:assert_wrapped_executables(Root),
+    artifact_normalizer:assert_declared_elf_closure(Root, [DependencyRoot]);
+validate_native_contract("otp", NativeContract, _Root, _DependencyRoot) ->
+    erlang:error({unsupported_native_runtime_contract, NativeContract});
+validate_native_contract("elixir", _NativeContract, _Root, _DependencyRoot) ->
     ok.
 
 collect(Root, Relative) ->
@@ -118,20 +132,25 @@ normalize_parts([".." | Rest], []) ->
 normalize_parts([Part | Rest], Accumulator) ->
     normalize_parts(Rest, [Part | Accumulator]).
 
-runtime_metadata("otp", Version, Root) ->
+runtime_metadata("otp", Version, NativeContract, Root) ->
     ErlexecMatches = lists:sort(filelib:wildcard(filename:join([Root, "erts-*", "bin", "erlexec"]))),
     [Erlexec] = ErlexecMatches,
     Major = hd(string:tokens(Version, ".")),
     VersionMarker = filename:join(["releases", Major, "OTP_VERSION"]),
     ok = require_version(filename:join(Root, VersionMarker), Version),
-    #{"erlexec" => relative_to(Root, Erlexec), "otp_version_marker" => VersionMarker};
-runtime_metadata("elixir", Version, Root) ->
+    ContractMetadata = case NativeContract of
+        "static" -> #{"otp_fully_static" => true};
+        "wrapped" -> #{"otp_runtime_wrapped" => true};
+        _ -> erlang:error({unsupported_native_runtime_contract, NativeContract})
+    end,
+    ContractMetadata#{"erlexec" => relative_to(Root, Erlexec), "otp_version_marker" => VersionMarker};
+runtime_metadata("elixir", Version, _NativeContract, Root) ->
     HomeMarker = filename:join(["bin", ".runtime_root"]),
     VersionMarker = "VERSION",
     ok = require_version(filename:join(Root, HomeMarker), Version),
     ok = require_version(filename:join(Root, VersionMarker), Version),
     #{"elixir_home_marker" => HomeMarker, "elixir_version_marker" => VersionMarker};
-runtime_metadata(Kind, _Version, _Root) ->
+runtime_metadata(Kind, _Version, _NativeContract, _Root) ->
     erlang:error({unsupported_runtime_kind, Kind}).
 
 require_version(Path, Version) ->
@@ -159,7 +178,7 @@ hex(Binary) ->
 
 metadata_json(Kind, Version, PackageDir, Archive, Digest, RuntimeMetadata) ->
     RuntimeFields = string:join([
-        json_string(Key) ++ ": " ++ json_string(maps:get(Key, RuntimeMetadata))
+        json_string(Key) ++ ": " ++ json_value(maps:get(Key, RuntimeMetadata))
         || Key <- lists:sort(maps:keys(RuntimeMetadata))
     ], ",\n    "),
     [
@@ -176,6 +195,10 @@ metadata_json(Kind, Version, PackageDir, Archive, Digest, RuntimeMetadata) ->
 
 json_string(Value) ->
     [$", [json_character(Character) || Character <- Value], $"].
+
+json_value(true) -> "true";
+json_value(false) -> "false";
+json_value(Value) -> json_string(Value).
 
 json_character($") -> "\\\"";
 json_character($\\) -> "\\\\";

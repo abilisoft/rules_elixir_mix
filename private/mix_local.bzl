@@ -1,6 +1,6 @@
-"""Explicit local-only Mix workflows for servers, reloaders, and generators."""
+"""Explicit local-only Mix workflows for servers, reloaders, and dependency updates."""
 
-load("//private:beam_info.bzl", "ErlangAppInfo", "crypto_runtime_files", "erl_env_flags", "execution_erlexec", "fips_erl_args", "otp_runtime_env", "path_join", "prepare_crypto_runtime", "runtime_path_erl_args", "test_erl_launcher")
+load("//private:beam_info.bzl", "ErlangAppInfo", "crypto_runtime_files", "erl_env_flags", "execution_erlexec", "fips_erl_args", "otp_runtime_env", "otp_runtime_erl_args", "path_join", "prepare_crypto_runtime", "test_erl_launcher")
 load("//private:mix_execution.bzl", "MIX_EVAL", "validate_user_env")
 load("//private:mix_info.bzl", "MixProjectInfo")
 
@@ -73,6 +73,7 @@ def _local_stage_manifest(ctx, app, dependencies, project_root):
     context_lines = [
         "schema=2",
         "mode=" + ctx.attr.mode,
+        "network_policy=" + ctx.attr.network_policy,
         "task=" + ctx.attr.task,
         "mix_env=" + ctx.attr.mix_env,
         "otp=" + ctx.toolchains["//:toolchain_type"].otpinfo.version,
@@ -164,14 +165,14 @@ def _mix_local_impl(ctx):
     )
     project = ctx.attr.lib[MixProjectInfo]
     app = ctx.attr.lib[ErlangAppInfo]
-    dependencies = app.compile_deps.to_list()
+    dependencies = app.compile_deps.to_list() + ctx.attr.tool_deps
     project_root = project.mix_config.short_path.rsplit("/", 1)[0] if "/" in project.mix_config.short_path else ""
     if project_root.startswith("../"):
         fail("local workflows require a Mix project in the main workspace")
     manifest, context_fingerprint, application_project_files = _local_stage_manifest(ctx, app, dependencies, project_root)
     driver = _compile_local_driver(ctx, toolchain.otpinfo)
     driver_runfiles_dir = driver.short_path.rsplit("/", 1)[0]
-    prefix = runtime_path_erl_args() + [
+    prefix = otp_runtime_erl_args(toolchain.otpinfo, runfiles = True) + [
         "-eval",
         _local_bootstrap_expression(ctx, manifest),
         "-noshell",
@@ -236,16 +237,16 @@ def _mix_local_impl(ctx):
     environment.update({
         "ERL_AFLAGS": erl_env_flags(args),
         "ERL_LIBS": ":".join(erl_libs),
-        "HEX_OFFLINE": "true",
         "LANG": "C",
         "LC_ALL": "C",
         "MIX_ENV": ctx.attr.mix_env,
         "MIX_OS_CONCURRENCY_LOCK": "false",
         "RULES_ELIXIR_MIX_EXS": project.mix_config.basename,
-        "RULES_ELIXIR_MIX_CHILD_ERL_AFLAGS": erl_env_flags(runtime_path_erl_args() + (["-crypto", "fips_mode", "true"] if toolchain.otpinfo.fips == "required" else [])),
+        "RULES_ELIXIR_MIX_CHILD_ERL_AFLAGS": erl_env_flags(otp_runtime_erl_args(toolchain.otpinfo, runfiles = True) + (["-crypto", "fips_mode", "true"] if toolchain.otpinfo.fips == "required" else [])),
         "SOURCE_DATE_EPOCH": "946684800",
         "TZ": "UTC",
     })
+    environment["HEX_OFFLINE"] = "false" if ctx.attr.network_policy == "online" else "true"
     if toolchain.otpinfo.fips == "required":
         environment["RULES_ELIXIR_MIX_FIPS_REQUIRED"] = "true"
 
@@ -280,7 +281,16 @@ mix_local = rule(
         "module": attr.string(),
         "task": attr.string(),
         "task_args": attr.string_list(),
+        "tool_deps": attr.label_list(
+            providers = [ErlangAppInfo],
+            doc = "Declared OTP applications needed only by this local workflow.",
+        ),
         "mix_env": attr.string(default = "dev"),
+        "network_policy": attr.string(
+            default = "offline",
+            values = ["offline", "online"],
+            doc = "Network policy for this explicit bazel run workflow; build and test actions remain offline.",
+        ),
         "env": attr.string_dict(),
         "_driver": attr.label(
             default = Label("//private:mix_local_driver.erl"),

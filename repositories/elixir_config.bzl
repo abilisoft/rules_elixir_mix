@@ -25,14 +25,8 @@ def _prebuilt_build(repository_ctx, name, installation):
         Label("//repositories:BUILD_elixir_prebuilt.tpl"),
         substitutions = {
             "%{NAME}": name,
-            "%{OTP_VERSION}": installation.otp_version,
-            "%{OTP_RUNTIME}": repository_ctx.attr.otp_runtime_files[name],
-            "%{ERLEXEC}": repository_ctx.attr.erlexec_files[name],
-            "%{OTP_VERSION_MARKER}": repository_ctx.attr.otp_version_markers[name],
-            "%{ELIXIR_VERSION}": installation.elixir_version,
-            "%{ELIXIR_RUNTIME}": repository_ctx.attr.elixir_runtime_files[name],
-            "%{ELIXIR_HOME_MARKER}": repository_ctx.attr.elixir_home_markers[name],
-            "%{ELIXIR_VERSION_MARKER}": repository_ctx.attr.elixir_version_markers[name],
+            "%{OTP_DECLARATION}": _prebuilt_otp_declaration(repository_ctx, name, installation),
+            "%{ELIXIR_DECLARATION}": _prebuilt_elixir_declaration(repository_ctx, name, installation),
             "%{EXEC_CONSTRAINTS}": _list(repository_ctx.attr.exec_compatible_withs.get(name, [])),
             "%{TARGET_CONSTRAINTS}": _list(repository_ctx.attr.target_compatible_withs.get(name, [])),
             "%{FIPS}": repository_ctx.attr.fips_modes[name],
@@ -46,8 +40,96 @@ def _prebuilt_build(repository_ctx, name, installation):
         executable = False,
     )
 
+def _prebuilt_otp_declaration(repository_ctx, name, installation):
+    target = repository_ctx.attr.otp_targets.get(name)
+    if target:
+        return """alias(
+    name = "otp",
+    actual = {target},
+)""".format(target = _quote(target))
+    return """otp_prebuilt_release(
+    name = "otp",
+    boot_file = {boot_file},
+    crypto_sdk = {crypto_sdk},
+    erlexec = {erlexec},
+    fips = {fips},
+    fully_static = {fully_static},
+    runtime_wrapped = {runtime_wrapped},
+    srcs = [{runtime}],
+    static_crypto_nif = {static_crypto_nif},
+    version = {version},
+    version_marker = {version_marker},
+    exec_compatible_with = [
+{exec_constraints}    ],
+    target_compatible_with = [
+{target_constraints}    ],
+)""".format(
+        boot_file = _optional_label(repository_ctx.attr.otp_boot_files.get(name, "")),
+        crypto_sdk = _optional_label(repository_ctx.attr.crypto_sdk_files.get(name, "")),
+        erlexec = _quote(repository_ctx.attr.erlexec_files[name]),
+        exec_constraints = _list(repository_ctx.attr.exec_compatible_withs.get(name, [])),
+        fips = _quote(repository_ctx.attr.fips_modes[name]),
+        fully_static = repository_ctx.attr.fully_static_otps[name],
+        runtime_wrapped = repository_ctx.attr.wrapped_otps[name],
+        runtime = _quote(repository_ctx.attr.otp_runtime_files[name]),
+        static_crypto_nif = repository_ctx.attr.static_crypto_nifs[name],
+        target_constraints = _list(repository_ctx.attr.target_compatible_withs.get(name, [])),
+        version = _quote(installation.otp_version),
+        version_marker = _quote(repository_ctx.attr.otp_version_markers[name]),
+    )
+
+def _prebuilt_elixir_declaration(repository_ctx, name, installation):
+    target = repository_ctx.attr.elixir_targets.get(name)
+    if target:
+        return """alias(
+    name = "runtime",
+    actual = {target},
+)""".format(target = _quote(target))
+    return """elixir_prebuilt_release(
+    name = "runtime",
+    home_marker = {home_marker},
+    otp = ":otp",
+    srcs = [{runtime}],
+    version = {version},
+    version_marker = {version_marker},
+    exec_compatible_with = [
+{exec_constraints}    ],
+    target_compatible_with = [
+{target_constraints}    ],
+)""".format(
+        exec_constraints = _list(repository_ctx.attr.exec_compatible_withs.get(name, [])),
+        home_marker = _quote(repository_ctx.attr.elixir_home_markers[name]),
+        runtime = _quote(repository_ctx.attr.elixir_runtime_files[name]),
+        target_constraints = _list(repository_ctx.attr.target_compatible_withs.get(name, [])),
+        version = _quote(installation.elixir_version),
+        version_marker = _quote(repository_ctx.attr.elixir_version_markers[name]),
+    )
+
 def _optional_label(value):
     return _quote(value) if value else "None"
+
+def _bootstrap_declaration(repository_ctx, name):
+    if repository_ctx.attr.bootstrap_otp_targets.get(name):
+        return ""
+    return """otp_prebuilt_release(
+    name = "bootstrap_otp",
+    boot_file = {boot_file},
+    erlexec = {erlexec},
+    fully_static = {fully_static},
+    srcs = [{runtime}],
+    version = {version},
+    version_marker = {version_marker},
+    exec_compatible_with = [
+{constraints}    ],
+)""".format(
+        boot_file = _optional_label(repository_ctx.attr.bootstrap_boot_files.get(name, "")),
+        constraints = _list(repository_ctx.attr.bootstrap_exec_compatible_withs.get(name, [])),
+        erlexec = _quote(repository_ctx.attr.bootstrap_erlexec_files[name]),
+        fully_static = repository_ctx.attr.bootstrap_fully_static_otps[name],
+        runtime = _quote(repository_ctx.attr.bootstrap_runtime_files[name]),
+        version = _quote(repository_ctx.attr.bootstrap_otp_versions[name]),
+        version_marker = _quote(repository_ctx.attr.bootstrap_version_markers[name]),
+    )
 
 def _source_build(repository_ctx, name, installation):
     repository_ctx.template(
@@ -55,11 +137,8 @@ def _source_build(repository_ctx, name, installation):
         Label("//repositories:BUILD_elixir_source.tpl"),
         substitutions = {
             "%{NAME}": name,
-            "%{BOOTSTRAP_OTP_VERSION}": repository_ctx.attr.bootstrap_otp_versions[name],
-            "%{BOOTSTRAP_RUNTIME}": repository_ctx.attr.bootstrap_runtime_files[name],
-            "%{BOOTSTRAP_ERLEXEC}": repository_ctx.attr.bootstrap_erlexec_files[name],
-            "%{BOOTSTRAP_VERSION_MARKER}": repository_ctx.attr.bootstrap_version_markers[name],
-            "%{BOOTSTRAP_LAUNCHER}": repository_ctx.attr.bootstrap_launcher_files[name],
+            "%{BOOTSTRAP_DECLARATION}": _bootstrap_declaration(repository_ctx, name),
+            "%{BOOTSTRAP_OTP}": _quote(repository_ctx.attr.bootstrap_otp_targets.get(name, ":bootstrap_otp")),
             "%{BOOTSTRAP_EXEC_CONSTRAINTS}": _list(repository_ctx.attr.bootstrap_exec_compatible_withs.get(name, [])),
             "%{OTP_VERSION}": installation.otp_version,
             "%{OTP_SOURCES}": repository_ctx.attr.otp_source_files[name],
@@ -73,10 +152,14 @@ def _source_build(repository_ctx, name, installation):
             "%{CRYPTO_SDK}": _optional_label(repository_ctx.attr.crypto_sdk_files.get(name, "")),
             "%{CONFIGURE_OPTIONS}": _list(repository_ctx.attr.configure_options.get(name, [])),
             "%{MAKE_OPTIONS}": _list(repository_ctx.attr.make_options.get(name, [])),
+            "%{OTP_FULLY_STATIC}": repository_ctx.attr.fully_static_otps[name],
             "%{COPTS}": _list(repository_ctx.attr.copts.get(name, [])),
             "%{CXXOPTS}": _list(repository_ctx.attr.cxxopts.get(name, [])),
             "%{LINKOPTS}": _list(repository_ctx.attr.linkopts.get(name, [])),
             "%{JOBS}": repository_ctx.attr.jobs[name],
+            "%{JIT}": repository_ctx.attr.jit_modes[name],
+            "%{LIBC}": repository_ctx.attr.libcs[name],
+            "%{TARGET_ARCH}": repository_ctx.attr.target_arches[name],
             "%{ELIXIR_JOBS}": repository_ctx.attr.elixir_jobs[name],
             "%{ELIXIR_MAKE_OPTIONS}": _list(repository_ctx.attr.elixir_make_options.get(name, [])),
             "%{EXEC_CONSTRAINTS}": _list(repository_ctx.attr.exec_compatible_withs.get(name, [])),
@@ -129,6 +212,7 @@ def _elixir_config_impl(repository_ctx):
             for label in [
                 "@{}//{}:otp_toolchain".format(repository_ctx.name, name),
                 "@{}//{}:toolchain".format(repository_ctx.name, name),
+                "@{}//{}:test_toolchain".format(repository_ctx.name, name),
             ]
         ])),
         executable = False,
@@ -141,18 +225,24 @@ elixir_config = repository_rule(
         "default_name": attr.string(mandatory = True),
         "otp_versions": attr.string_dict(),
         "bootstrap_otp_versions": attr.string_dict(),
+        "bootstrap_otp_targets": attr.string_dict(),
         "bootstrap_runtime_files": attr.string_dict(),
         "bootstrap_erlexec_files": attr.string_dict(),
+        "bootstrap_boot_files": attr.string_dict(),
         "bootstrap_version_markers": attr.string_dict(),
-        "bootstrap_launcher_files": attr.string_dict(),
+        "bootstrap_fully_static_otps": attr.string_dict(),
         "bootstrap_exec_compatible_withs": attr.string_list_dict(),
         "otp_source_files": attr.string_dict(),
         "otp_source_directory_manifests": attr.string_dict(),
         "otp_runtime_files": attr.string_dict(),
+        "otp_targets": attr.string_dict(),
+        "wrapped_otps": attr.string_dict(),
         "erlexec_files": attr.string_dict(),
+        "otp_boot_files": attr.string_dict(),
         "otp_version_markers": attr.string_dict(),
         "elixir_versions": attr.string_dict(),
         "elixir_runtime_files": attr.string_dict(),
+        "elixir_targets": attr.string_dict(),
         "elixir_home_markers": attr.string_dict(),
         "elixir_version_markers": attr.string_dict(),
         "elixir_source_files": attr.string_dict(),
@@ -163,7 +253,10 @@ elixir_config = repository_rule(
         "crypto_sdk_files": attr.string_dict(),
         "fips_modes": attr.string_dict(),
         "static_crypto_nifs": attr.string_dict(),
+        "fully_static_otps": attr.string_dict(),
         "cross_compiles": attr.string_dict(),
+        "jit_modes": attr.string_dict(),
+        "libcs": attr.string_dict(),
         "configure_options": attr.string_list_dict(),
         "make_options": attr.string_list_dict(),
         "copts": attr.string_list_dict(),
@@ -174,5 +267,6 @@ elixir_config = repository_rule(
         "elixir_make_options": attr.string_list_dict(),
         "exec_compatible_withs": attr.string_list_dict(),
         "target_compatible_withs": attr.string_list_dict(),
+        "target_arches": attr.string_dict(),
     },
 )
