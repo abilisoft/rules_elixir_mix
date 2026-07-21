@@ -256,8 +256,14 @@ def parse_mix_lock(content):
         for dep in value.values[5]:
             parsed = _hex_dep(dep)
 
-            # Optional edges are retained when the optional package is present
-            # in this lock graph; the extension filters missing packages.
+            # A lock records package metadata, including optional edges that a
+            # consuming Mix project did not select. Keep those packages
+            # addressable through the generated hub, but do not make an
+            # optional edge part of another package's Bazel closure. Consumers
+            # select an optional package explicitly from the hub when their
+            # manifest enables it.
+            if parsed.optional:
+                continue
             destination = runtime_deps if parsed.runtime else compile_deps
             if parsed.package not in destination:
                 destination.append(parsed.package)

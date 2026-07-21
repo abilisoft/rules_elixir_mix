@@ -2,5 +2,6 @@ exports_files([
     "BUILD_elixir_prebuilt.tpl",
     "BUILD_elixir_source.tpl",
     "elixir_config.bzl",
+    "prebuilt_archive.bzl",
     "source_archive.bzl",
 ])

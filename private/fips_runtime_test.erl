@@ -123,7 +123,12 @@ no_loadable_crypto_nif(OtpRoot) ->
     ok.
 
 no_dynamic_crypto_dependencies(OtpRoot) ->
-    [Beam | _] = filelib:wildcard(filename:join([OtpRoot, "erts-*", "bin", "beam.smp"])),
+    [Launcher | _] = filelib:wildcard(filename:join([OtpRoot, "erts-*", "bin", "beam.smp"])),
+    Wrapped = filename:join(filename:dirname(Launcher), ".real-beam.smp"),
+    Beam = case filelib:is_file(Wrapped) of
+        true -> Wrapped;
+        false -> Launcher
+    end,
     Needed = elf_needed_libraries(Beam),
     false = lists:any(fun(Name) -> contains(Name, <<"libcrypto.so">>) end, Needed),
     false = lists:any(fun(Name) -> contains(Name, <<"libssl.so">>) end, Needed),

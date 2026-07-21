@@ -8,33 +8,9 @@ load(
     "otp_toolchain",
 )
 
-otp_prebuilt_release(
-    name = "otp",
-    crypto_sdk = %{CRYPTO_SDK},
-    erlexec = "%{ERLEXEC}",
-    fips = "%{FIPS}",
-    srcs = ["%{OTP_RUNTIME}"],
-    static_crypto_nif = %{STATIC_CRYPTO_NIF},
-    version = "%{OTP_VERSION}",
-    version_marker = "%{OTP_VERSION_MARKER}",
-    exec_compatible_with = [
-%{EXEC_CONSTRAINTS}    ],
-    target_compatible_with = [
-%{TARGET_CONSTRAINTS}    ],
-)
+%{OTP_DECLARATION}
 
-elixir_prebuilt_release(
-    name = "runtime",
-    home_marker = "%{ELIXIR_HOME_MARKER}",
-    otp = ":otp",
-    srcs = ["%{ELIXIR_RUNTIME}"],
-    version = "%{ELIXIR_VERSION}",
-    version_marker = "%{ELIXIR_VERSION_MARKER}",
-    exec_compatible_with = [
-%{EXEC_CONSTRAINTS}    ],
-    target_compatible_with = [
-%{TARGET_CONSTRAINTS}    ],
-)
+%{ELIXIR_DECLARATION}
 
 elixir_toolchain(
     name = "elixir",
@@ -71,4 +47,15 @@ toolchain(
 %{TARGET_CONSTRAINTS}    ],
     toolchain = ":elixir",
     toolchain_type = "@rules_elixir_mix//:toolchain_type",
+)
+
+toolchain(
+    name = "test_toolchain",
+    exec_compatible_with = [
+%{EXEC_CONSTRAINTS}    ],
+    target_compatible_with = [
+        "//:runtime_%{NAME}",
+%{TARGET_CONSTRAINTS}    ],
+    toolchain = "@bazel_tools//tools/test:empty_toolchain",
+    toolchain_type = "@bazel_tools//tools/test:default_test_toolchain_type",
 )

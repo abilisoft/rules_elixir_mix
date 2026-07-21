@@ -3,7 +3,7 @@
 load("//private:beam_info.bzl", "OtpInfo", "execution_erlexec", "fips_erl_args", "otp_runtime_env", "prepare_crypto_runtime")
 load("//private:runtime_archive_info.bzl", "BeamRuntimeArchiveInfo", "BeamRuntimeSourceInfo")
 
-_DRIVER_EVAL = "A=init:get_plain_arguments(),[D|R]=A,{ok,runtime_archive_driver,B}=compile:file(D,[binary,report_errors,report_warnings]),{module,runtime_archive_driver}=code:load_binary(runtime_archive_driver,D,B),runtime_archive_driver:main(R),halt()."
+_DRIVER_EVAL = "A=init:get_plain_arguments(),[N,D|R]=A,{ok,artifact_normalizer,NB}=compile:file(N,[binary,report_errors,report_warnings]),{module,artifact_normalizer}=code:load_binary(artifact_normalizer,N,NB),{ok,runtime_archive_driver,B}=compile:file(D,[binary,report_errors,report_warnings]),{module,runtime_archive_driver}=code:load_binary(runtime_archive_driver,D,B),runtime_archive_driver:main(R),halt()."
 
 def _validate_package_dir(value):
     if not value or value.startswith("/"):
@@ -17,6 +17,12 @@ def _beam_runtime_archive_impl(ctx):
     _validate_package_dir(ctx.attr.package_dir)
     if not otp.crypto_sdk:
         fail("beam_runtime_archive requires a source runtime built with a declared crypto_sdk so its SHA-256 can be generated hermetically")
+    if otp.runtime_wrapped:
+        native_contract = "wrapped"
+    elif otp.fully_static:
+        native_contract = "static"
+    else:
+        fail("beam_runtime_archive requires a verified wrapped or fully static OTP runtime")
 
     archive = ctx.outputs.archive
     sha256 = ctx.outputs.sha256
@@ -35,9 +41,12 @@ def _beam_runtime_archive_impl(ctx):
         "-eval",
         _DRIVER_EVAL,
         "-extra",
+        ctx.file._normalizer,
         ctx.file._driver,
         source.kind,
         source.version,
+        native_contract,
+        otp.crypto_sdk.sysroot,
         root,
         ctx.attr.package_dir,
         archive,
@@ -57,7 +66,7 @@ def _beam_runtime_archive_impl(ctx):
         executable = execution_erlexec(otp),
         arguments = [args],
         inputs = depset(
-            direct = [source.root, ctx.file._driver],
+            direct = [source.root, otp.crypto_sdk.sysroot, ctx.file._driver, ctx.file._normalizer],
             transitive = [otp.runtime_files, activation.files],
         ),
         outputs = [archive, sha256, metadata, state],
@@ -96,6 +105,10 @@ beam_runtime_archive = rule(
         ),
         "_driver": attr.label(
             default = Label("//private:runtime_archive_driver.erl"),
+            allow_single_file = [".erl"],
+        ),
+        "_normalizer": attr.label(
+            default = Label("//private:artifact_normalizer.erl"),
             allow_single_file = [".erl"],
         ),
     },

@@ -1,3 +1,4 @@
+load("@rules_cc//cc:defs.bzl", "cc_toolchain")
 load(
     "//:defs.bzl",
     "beam_runtime_archive",
@@ -13,8 +14,11 @@ load(
     "erlang_app",
     "erlang_common_test",
     "erlang_eunit_test",
+    "hex_package_assets",
     "mix_coverage_test",
+    "mix_deps_update",
     "mix_ecto_test",
+    "mix_escript",
     "mix_format_test",
     "mix_iex",
     "mix_lcov_test",
@@ -32,7 +36,8 @@ load(
     "otp_toolchain",
     "rustler_nif",
 )
-load(":analysis_tests.bzl", "fake_directory", "fake_executable", "fake_runtime_source", "generated_file", "mix_lock_analysis_check", "toolchain_analysis_check", "version_catalog_analysis_check")
+load(":analysis_cc_toolchain.bzl", "analysis_cc_toolchain_config")
+load(":analysis_tests.bzl", "fake_directory", "fake_executable", "fake_runtime_source", "generated_file", "mix_lock_analysis_check", "otp_runtime_closure_analysis_check", "toolchain_analysis_check", "version_catalog_analysis_check")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -52,11 +57,43 @@ filegroup(
 )
 
 otp_prebuilt_release(
-    name = "otp",
+    name = "otp_x86_64",
     srcs = [":otp_files"],
     erlexec = "runtime/otp/erts-17.0.3/bin/erlexec",
+    exec_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    fully_static = True,
     version = "29.0.3",
     version_marker = "runtime/otp/releases/29/OTP_VERSION",
+)
+
+otp_prebuilt_release(
+    name = "otp_arm64",
+    srcs = [":otp_files"],
+    erlexec = "runtime/otp/erts-17.0.3/bin/erlexec",
+    exec_compatible_with = [
+        "@platforms//cpu:arm64",
+        "@platforms//os:linux",
+    ],
+    fully_static = True,
+    version = "29.0.3",
+    version_marker = "runtime/otp/releases/29/OTP_VERSION",
+)
+
+alias(
+    name = "otp",
+    actual = select({
+        "@platforms//cpu:arm64": ":otp_arm64",
+        "@platforms//cpu:x86_64": ":otp_x86_64",
+    }),
+)
+
+otp_runtime_closure_analysis_check(
+    name = "otp_runtime_closure_analysis",
+    otp = ":otp_fips_provider",
+    tags = ["manual"],
 )
 
 elixir_prebuilt_release(
@@ -90,6 +127,86 @@ toolchain(
 
 fake_executable(name = "fake_activation")
 
+# This deliberately non-runnable toolchain verifies native rule analysis
+# without consulting Bazel's local C/C++ auto-configuration. Real compilation
+# is covered by the rules_fips-backed source-integration matrix.
+fake_executable(name = "analysis_cc_tool")
+
+filegroup(
+    name = "analysis_cc_files",
+    srcs = [":analysis_cc_tool"],
+)
+
+analysis_cc_toolchain_config(
+    name = "analysis_cc_x86_64_config",
+    cpu = "x86_64",
+    tool = ":analysis_cc_tool",
+)
+
+analysis_cc_toolchain_config(
+    name = "analysis_cc_arm64_config",
+    cpu = "arm64",
+    tool = ":analysis_cc_tool",
+)
+
+cc_toolchain(
+    name = "analysis_cc_x86_64_impl",
+    all_files = ":analysis_cc_files",
+    ar_files = ":analysis_cc_files",
+    compiler_files = ":analysis_cc_files",
+    dwp_files = ":analysis_cc_files",
+    linker_files = ":analysis_cc_files",
+    objcopy_files = ":analysis_cc_files",
+    strip_files = ":analysis_cc_files",
+    supports_param_files = 0,
+    toolchain_config = ":analysis_cc_x86_64_config",
+    toolchain_identifier = "rules-elixir-mix-analysis-x86-64",
+)
+
+cc_toolchain(
+    name = "analysis_cc_arm64_impl",
+    all_files = ":analysis_cc_files",
+    ar_files = ":analysis_cc_files",
+    compiler_files = ":analysis_cc_files",
+    dwp_files = ":analysis_cc_files",
+    linker_files = ":analysis_cc_files",
+    objcopy_files = ":analysis_cc_files",
+    strip_files = ":analysis_cc_files",
+    supports_param_files = 0,
+    toolchain_config = ":analysis_cc_arm64_config",
+    toolchain_identifier = "rules-elixir-mix-analysis-arm64",
+)
+
+toolchain(
+    name = "analysis_cc_x86_64",
+    exec_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    toolchain = ":analysis_cc_x86_64_impl",
+    toolchain_type = "@bazel_tools//tools/cpp:toolchain_type",
+)
+
+toolchain(
+    name = "analysis_cc_arm64",
+    exec_compatible_with = [
+        "@platforms//cpu:arm64",
+        "@platforms//os:linux",
+    ],
+    target_compatible_with = [
+        "@platforms//cpu:arm64",
+        "@platforms//os:linux",
+    ],
+    toolchain = ":analysis_cc_arm64_impl",
+    toolchain_type = "@bazel_tools//tools/cpp:toolchain_type",
+)
+
+fake_executable(name = "fake_execution_wrapper")
+
 fake_executable(name = "fake_chromedriver")
 
 version_catalog_analysis_check(name = "version_catalog_analysis")
@@ -113,32 +230,70 @@ otp_crypto_sdk(
     activation_exec_tool = ":fake_activation",
     activation_tool = ":fake_activation",
     activation_tool_release_path = "bin/activate_crypto",
+    build_elf_interpreter = "/__bazel_hermetic_runtime__/declared-loader",
+    execution_exec_wrapper = ":fake_execution_wrapper",
+    execution_wrapper = ":fake_execution_wrapper",
+    execution_wrapper_environment = {
+        "RULES_TEST_PROGRAM": "{program}",
+    },
+    execution_wrapper_release_path = "bin/runtime-launch",
     fully_static = False,
     runtime_destinations = [
         "bin/activate_crypto",
+        "bin/runtime-launch",
         "lib/fips.so",
     ],
     runtime_environment = {
-        "FIPS_MODULE_CONF": "{activation_root}/fipsmodule.cnf",
-        "OPENSSL_CONF": "{sysroot}/openssl.cnf",
-        "OPENSSL_MODULES": "{sysroot}/lib",
+        "CRYPTO_MODULE_CONF": "{activation_root}/module.cnf",
+        "CRYPTO_PROVIDER_CONF": "{sysroot}/provider.cnf",
+        "CRYPTO_PROVIDER_MODULES": "{sysroot}/lib",
     },
     runtime_files = [
         ":fake_activation",
+        ":fake_execution_wrapper",
         "runtime/otp/erts-17.0.3/bin/beam.smp",
     ],
     sysroot = ":fake_crypto_sysroot",
 )
 
 otp_prebuilt_release(
-    name = "otp_fips_provider",
+    name = "otp_fips_provider_x86_64",
     srcs = [":otp_files"],
     crypto_sdk = ":provider_crypto_sdk",
     erlexec = "runtime/otp/erts-17.0.3/bin/erlexec",
+    exec_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
     fips = "required",
+    runtime_wrapped = True,
     static_crypto_nif = True,
     version = "29.0.3",
     version_marker = "runtime/otp/releases/29/OTP_VERSION",
+)
+
+otp_prebuilt_release(
+    name = "otp_fips_provider_arm64",
+    srcs = [":otp_files"],
+    crypto_sdk = ":provider_crypto_sdk",
+    erlexec = "runtime/otp/erts-17.0.3/bin/erlexec",
+    exec_compatible_with = [
+        "@platforms//cpu:arm64",
+        "@platforms//os:linux",
+    ],
+    fips = "required",
+    runtime_wrapped = True,
+    static_crypto_nif = True,
+    version = "29.0.3",
+    version_marker = "runtime/otp/releases/29/OTP_VERSION",
+)
+
+alias(
+    name = "otp_fips_provider",
+    actual = select({
+        "@platforms//cpu:arm64": ":otp_fips_provider_arm64",
+        "@platforms//cpu:x86_64": ":otp_fips_provider_x86_64",
+    }),
 )
 
 elixir_prebuilt_release(
@@ -220,8 +375,33 @@ mix_library(
     ],
     app_name = "analysis_fixture",
     generated_srcs = [":generated_source"],
+    hex_package = "analysis_fixture",
+    hex_package_repository = "hexpm",
+    hex_package_sha256 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    hex_package_version = "0.1.0",
     mix_config = "mix.exs",
     mix_env = "test",
+    priv = ["priv/static/app.js"],
+    tags = ["manual"],
+)
+
+hex_package_assets(
+    name = "hex_assets_analysis_fixture",
+    package = ":analysis_test_lib",
+    paths = ["priv/static/app.js"],
+)
+
+mix_escript(
+    name = "escript_analysis_fixture",
+    lib = ":analysis_test_lib",
+    mix_env = "test",
+    tags = ["manual"],
+)
+
+mix_deps_update(
+    name = "deps_update_analysis_fixture",
+    hex = "@hex_pm//:lib",
+    lib = ":analysis_test_lib",
     tags = ["manual"],
 )
 
@@ -434,7 +614,7 @@ mix_lock_analysis_check(
     name = "lock_analysis",
     content = """%{
   "compile_tool": {:hex, :compile_tool, "1.0.0", "outer", [:rebar3], [], "hexpm", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
-  "web_app" => {:hex, :web_app, "2.0.0", "outer", [:mix], [{:compile_tool, "~> 1.0", [hex: :compile_tool, runtime: false]}], "hexpm", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}
+  "web_app" => {:hex, :web_app, "2.0.0", "outer", [:mix], [{:compile_tool, "~> 1.0", [hex: :compile_tool, runtime: false]}, {:unused_optional, "~> 1.0", [hex: :unused_optional, optional: true]}], "hexpm", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}
 }
 """,
     tags = ["manual"],

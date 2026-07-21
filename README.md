@@ -14,7 +14,7 @@ Hermetic, Mix-first Bazel rules for Elixir and Erlang/OTP applications,
 including Phoenix, LiveView, ExUnit, analysis, and releases.
 
 > [!IMPORTANT]
-> [`v0.2.1`](https://github.com/abilisoft/rules_elixir_mix/releases/tag/v0.2.1)
+> [`v0.3.0`](https://github.com/abilisoft/rules_elixir_mix/releases/tag/v0.3.0)
 > is available as a signed GitHub release but is intentionally not published to
 > the Bazel Central Registry yet. Pin its verified commit directly as shown in
 > [Getting started](docs/getting_started.md#1-pin-the-ruleset). Source builds
@@ -59,6 +59,7 @@ toolchains.
 | --- | --- |
 | Elixir and Erlang applications | `mix_library`, `erlang_app`, `rebar_library` |
 | Locked dependencies | Bzlmod import from `mix.lock`, including Mix and Rebar packages |
+| Locked package interoperability | Public package-relative asset projections and executable Mix escripts |
 | Dependency semantics | Separate compile, type, and runtime edges |
 | Generated/runtime content | Generated source mappings, `priv`, NIFs, protocol consolidation |
 | Tests | ExUnit sharding, EUnit, Common Test, Ecto/Postgres, Wallaby |

@@ -24,10 +24,14 @@ main([ConfigPath, ExecutionRoot0]) ->
     ok = file:make_symlink(Erl, filename:join(Tools, "erl")),
     Environment0 = maps:get(environment, Config),
     Environment1 = maps:map(fun(_Key, Value) -> expand_path(Value, ExecutionRoot) end, Environment0),
-    Environment = inherit_crypto_environment(Environment1),
+    Environment = inherit_declared_environment(
+        Environment1,
+        maps:get(inherited_sdk_environment, Config)
+    ),
+    ErlAFlags = expand_runtime_value(maps:get(erl_aflags, Config), ExecutionRoot),
     BuildEnvironment = Environment#{
         "ERL_COMPILER_OPTIONS" => "deterministic",
-        "ERL_AFLAGS" => maps:get(erl_aflags, Config),
+        "ERL_AFLAGS" => ErlAFlags,
         "ERLC_EMULATOR" => filename:join(Tools, "erl"),
         "ELIXIR_ERL_OPTIONS" => "+fnu",
         "HOME" => filename:join(Work, "home"),
@@ -143,7 +147,10 @@ expand_path({path_list, Paths}, ExecutionRoot) ->
 expand_path(Value, _ExecutionRoot) ->
     Value.
 
-inherit_crypto_environment(Environment) ->
+expand_runtime_value(Value, ExecutionRoot) ->
+    lists:flatten(string:replace(Value, "/proc/self/cwd/", ExecutionRoot ++ "/", all)).
+
+inherit_declared_environment(Environment, Keys) ->
     lists:foldl(
         fun(Key, Accumulator) ->
             case os:getenv(Key) of
@@ -152,7 +159,7 @@ inherit_crypto_environment(Environment) ->
             end
         end,
         Environment,
-        ["OPENSSL_CONF", "OPENSSL_MODULES", "FIPS_MODULE_CONF"]
+        Keys
     ).
 
 stage_runtime(Source, Output) ->

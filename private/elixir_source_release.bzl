@@ -1,6 +1,6 @@
 """Build pristine Elixir sources against a declared OTP runtime."""
 
-load("//private:beam_info.bzl", "OtpInfo", "erl_env_flags", "execution_root_path", "fips_erl_args", "otp_runtime_env", "path_join", "prepare_crypto_runtime")
+load("//private:beam_info.bzl", "OtpInfo", "erl_env_flags", "execution_erlexec", "execution_erts_bin", "execution_root_path", "fips_erl_args", "otp_runtime_env", "otp_runtime_erl_args", "path_join", "prepare_crypto_runtime")
 load("//private:elixir_info.bzl", "ElixirInfo", "otp_info_from_dependency")
 load("//private:runtime_archive_info.bzl", "BeamRuntimeSourceInfo")
 
@@ -73,8 +73,17 @@ def _elixir_source_release_impl(ctx):
     otp = otp_info_from_dependency(ctx.attr.otp)
     activation = prepare_crypto_runtime(ctx, otp, ctx.label.name + "_crypto_state")
     child_erl_aflags = erl_env_flags(
-        ["+fnu"] + (["-crypto", "fips_mode", "true"] if otp.fips == "required" else []),
+        otp_runtime_erl_args(otp) +
+        ["+fnu"] +
+        (["-crypto", "fips_mode", "true"] if otp.fips == "required" else []),
     )
+    inherited_sdk_environment = sorted({
+        key: True
+        for key in (
+            (otp.crypto_sdk.execution_wrapper_environment.keys() if otp.crypto_sdk else []) +
+            activation.environment.keys()
+        )
+    }.keys())
     output = ctx.actions.declare_directory(ctx.label.name + "_runtime")
     version_file = ctx.actions.declare_file(ctx.label.name + "_version")
     ctx.actions.write(version_file, ctx.attr.version + "\n")
@@ -90,7 +99,7 @@ def _elixir_source_release_impl(ctx):
         posix_tools.append(files_to_run)
     if not posix_tool_executables:
         fail("elixir_source_release requires a hermetic POSIX toolbox")
-    otp_exec_erts_bin = otp.erts_bin
+    otp_exec_erts_bin = execution_erts_bin(otp)
     path_directories = _path_directories([
         ctx.executable.bash,
         ctx.executable.make,
@@ -117,6 +126,7 @@ def _elixir_source_release_impl(ctx):
             "  erlexec => {}".format(_erl_string(path_join(otp_exec_erts_bin, "erlexec"))),
             "  erl_aflags => {}".format(_erl_string(child_erl_aflags)),
             "  escript => {}".format(_erl_string(path_join(otp_exec_erts_bin, "escript"))),
+            "  inherited_sdk_environment => {}".format(_term_list(inherited_sdk_environment)),
             "  jobs => {}".format(ctx.attr.jobs),
             "  make => {}".format(_erl_string(ctx.executable.make.path)),
             "  make_options => {}".format(_term_list(ctx.attr.make_options)),
@@ -140,7 +150,7 @@ def _elixir_source_release_impl(ctx):
         config,
         execution_root_path("."),
     ])
-    action_env = otp_runtime_env(otp, use_execution_overlay = False)
+    action_env = otp_runtime_env(otp)
     action_env.update(activation.environment)
     action_env.update({
         "HOME": output.path + ".work/driver_home",
@@ -150,7 +160,7 @@ def _elixir_source_release_impl(ctx):
         "TZ": "UTC",
     })
     ctx.actions.run(
-        executable = otp.erlexec,
+        executable = execution_erlexec(otp),
         arguments = [args],
         inputs = depset(
             direct = ctx.files.srcs + tool_files + [ctx.file._driver, ctx.file._normalizer, config],

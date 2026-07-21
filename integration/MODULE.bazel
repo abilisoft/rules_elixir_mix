@@ -5,10 +5,50 @@ module(
 )
 
 bazel_dep(name = "platforms", version = "1.1.0")
-bazel_dep(name = "rules_elixir_mix", version = "0.2.0")
+bazel_dep(name = "rules_elixir_mix", version = "0.3.0")
 local_path_override(
     module_name = "rules_elixir_mix",
     path = "..",
+)
+
+prebuilt_archive = use_repo_rule(
+    "@rules_elixir_mix//repositories:prebuilt_archive.bzl",
+    "prebuilt_archive",
+)
+
+prebuilt_archive(
+    name = "otp_runtime_x86_64",
+    archive_type = "tar.gz",
+    exported_files = [
+        "erts-17.0.3/bin/erlexec",
+        "releases/29/OTP_VERSION",
+        "releases/29/start_clean.boot",
+    ],
+    sha256 = "c44ba721fd224a0ca98ae736b2932f84f6c4d9aaf3179aeed5de555ca815d0b4",
+    urls = ["https://github.com/gleam-community/erlang-linux-builds/releases/download/OTP-29.0.3/erlang-29.0.3-x64.tar.gz"],
+)
+
+prebuilt_archive(
+    name = "otp_runtime_arm64",
+    archive_type = "tar.gz",
+    exported_files = [
+        "erts-17.0.3/bin/erlexec",
+        "releases/29/OTP_VERSION",
+        "releases/29/start_clean.boot",
+    ],
+    sha256 = "a3b44200d9e2137ad5f133cdc926af804dd8ac217a652802288a8a4424e8e359",
+    urls = ["https://github.com/gleam-community/erlang-linux-builds/releases/download/OTP-29.0.3/erlang-29.0.3-arm64.tar.gz"],
+)
+
+prebuilt_archive(
+    name = "elixir_runtime",
+    archive_type = "zip",
+    exported_files = [
+        "bin/elixir",
+        "VERSION",
+    ],
+    sha256 = "a9e88cd41fbbba7da6f6dc237a49dd2ed4e70457121035cc7fc56ad05582f394",
+    urls = ["https://github.com/elixir-lang/elixir/releases/download/v1.20.2/elixir-otp-29.zip"],
 )
 
 elixir_config = use_extension(
@@ -18,35 +58,33 @@ elixir_config = use_extension(
 elixir_config.prebuilt_toolchain(
     name = "otp29_elixir120_x86_64",
     default = True,
-    elixir_sha256 = "a5fadcf05c64c3ced4486ed867a49f240083db8066f219ad958e8f93a4f52120",
-    elixir_type = "tar.gz",
-    elixir_url = "file:///tmp/rules-elixir-mix-ci-elixir-x86_64.tar.gz",
+    elixir_home_marker = "bin/elixir",
+    elixir_sha256 = "a9e88cd41fbbba7da6f6dc237a49dd2ed4e70457121035cc7fc56ad05582f394",
+    elixir_type = "zip",
+    elixir_url = "https://github.com/elixir-lang/elixir/releases/download/v1.20.2/elixir-otp-29.zip",
     elixir_version = "1.20.2",
     erlexec = "erts-17.0.3/bin/erlexec",
     exec_compatible_with = [
         "@platforms//cpu:x86_64",
         "@platforms//os:linux",
     ],
-    otp_sha256 = "a636ad0585b0fe85a5dfa165ba23a9c81a67cadfdd6e2a732a1cc50c51766bcf",
+    otp_boot_file = "releases/29/start_clean.boot",
+    otp_fully_static = True,
+    otp_sha256 = "c44ba721fd224a0ca98ae736b2932f84f6c4d9aaf3179aeed5de555ca815d0b4",
     otp_type = "tar.gz",
-    otp_url = "file:///tmp/rules-elixir-mix-ci-otp-x86_64.tar.gz",
+    otp_url = "https://github.com/gleam-community/erlang-linux-builds/releases/download/OTP-29.0.3/erlang-29.0.3-x64.tar.gz",
     otp_version = "29.0.3",
     runtime_abi = "//:elixir_otp29_elixir120_x86_64",
 )
 elixir_config.prebuilt_toolchain(
     name = "otp29_elixir120_arm64",
-    elixir_sha256 = "fa843c8ed54cb4f8c9bda88f9650726f6ec7f712cb0d33aebe82cae8bc627cce",
-    elixir_type = "tar.gz",
-    elixir_url = "file:///tmp/rules-elixir-mix-ci-elixir-arm64.tar.gz",
+    elixir = "//:prebuilt_elixir_arm64",
     elixir_version = "1.20.2",
-    erlexec = "erts-17.0.3/bin/erlexec",
     exec_compatible_with = [
         "@platforms//cpu:arm64",
         "@platforms//os:linux",
     ],
-    otp_sha256 = "0eb1e99573b630cbbc9c7ee1e6126b083556374f9582e6874f70bfa650231fd6",
-    otp_type = "tar.gz",
-    otp_url = "file:///tmp/rules-elixir-mix-ci-otp-arm64.tar.gz",
+    otp = "//:prebuilt_otp_arm64",
     otp_version = "29.0.3",
     runtime_abi = "//:elixir_otp29_elixir120_arm64",
 )
@@ -54,25 +92,11 @@ use_repo(elixir_config, "elixir_config")
 
 register_toolchains(
     "@elixir_config//otp29_elixir120_arm64:otp_toolchain",
+    "@elixir_config//otp29_elixir120_arm64:test_toolchain",
     "@elixir_config//otp29_elixir120_arm64:toolchain",
     "@elixir_config//otp29_elixir120_x86_64:otp_toolchain",
+    "@elixir_config//otp29_elixir120_x86_64:test_toolchain",
     "@elixir_config//otp29_elixir120_x86_64:toolchain",
-)
-
-http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
-
-http_file(
-    name = "lazy_html_nif_arm64_linux_gnu",
-    downloaded_file_path = "lazy_html-nif-2.16-aarch64-linux-gnu-0.1.11.tar.gz",
-    sha256 = "243f5efa6a9f7270bae191cd23a132263f7fee0ae8d42b016dd7e34617840aeb",
-    urls = ["https://github.com/dashbitco/lazy_html/releases/download/v0.1.11/lazy_html-nif-2.16-aarch64-linux-gnu-0.1.11.tar.gz"],
-)
-
-http_file(
-    name = "lazy_html_nif_x86_64_linux_gnu",
-    downloaded_file_path = "lazy_html-nif-2.16-x86_64-linux-gnu-0.1.11.tar.gz",
-    sha256 = "8e4bc558f8fed8f5b766ffc4d3e566ebd1ab9ca5609dfcc4ab6b55853072702c",
-    urls = ["https://github.com/dashbitco/lazy_html/releases/download/v0.1.11/lazy_html-nif-2.16-x86_64-linux-gnu-0.1.11.tar.gz"],
 )
 
 elixir_packages = use_extension(
@@ -82,8 +106,5 @@ elixir_packages = use_extension(
 elixir_packages.mix_lock(
     name = "mix_deps",
     lockfile = "//:mix.lock",
-    precompiled_native_artifacts = {
-        "lazy_html": "//:lazy_html_nif",
-    },
 )
 use_repo(elixir_packages, "hex_pm", "mix_deps")

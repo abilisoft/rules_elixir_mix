@@ -3,7 +3,12 @@
 
 Code.require_file("source_catalog.ex", __DIR__)
 
-catalog = Path.expand("../bzlmod/versions.bzl", __DIR__)
+catalog =
+  case System.get_env("SOURCE_CATALOG_PATH") do
+    nil -> Path.expand("../bzlmod/versions.bzl", __DIR__)
+    path -> Path.expand(path)
+  end
+
 releases = RulesElixirMix.SourceCatalog.refresh(catalog, System.get_env("GITHUB_TOKEN"))
 
 case releases do

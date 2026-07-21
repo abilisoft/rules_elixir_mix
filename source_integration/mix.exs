@@ -10,6 +10,7 @@ defmodule SourceIntegrationApp.MixProject do
       deps: [
         {:bandit, "~> 1.0"},
         {:jason, "~> 1.4"},
+        {:lazy_html, "~> 0.1", only: :test},
         {:phoenix, "~> 1.8.0"},
         {:phoenix_html, "~> 4.1"},
         {:phoenix_live_view, "~> 1.1"}

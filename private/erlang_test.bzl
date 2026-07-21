@@ -1,6 +1,6 @@
 """Shell-free EUnit and Common Test rules."""
 
-load("//private:beam_info.bzl", "ErlangAppInfo", "crypto_runtime_files", "erl_env_flags", "fips_erl_args", "flat_runtime_deps", "otp_runtime_env", "prepare_crypto_runtime", "runtime_path_erl_args", "test_erl_launcher")
+load("//private:beam_info.bzl", "ErlangAppInfo", "crypto_runtime_files", "erl_env_flags", "fips_erl_args", "flat_runtime_deps", "otp_runtime_env", "otp_runtime_erl_args", "prepare_crypto_runtime", "test_erl_launcher")
 
 _EUNIT_EVAL = "{ok,_}=application:ensure_all_started(eunit),A=[{application,list_to_atom(N)}||N<-init:get_plain_arguments()],case eunit:test(A,[verbose]) of ok->halt(0);_->halt(1) end."
 _COMMON_TEST_EVAL = "[D,C]=init:get_plain_arguments(),{ok,common_test_driver,B}=compile:file(D,[binary,report_errors,report_warnings]),{module,common_test_driver}=code:load_binary(common_test_driver,D,B),common_test_driver:main([C]),halt()."
@@ -51,7 +51,7 @@ def _test_result(ctx, expression, names, extra_runfiles = [], plain_args = []):
         for directory in app[ErlangAppInfo].lib_dirs_short_path:
             if directory not in lib_dirs:
                 lib_dirs.append(directory)
-    args = runtime_path_erl_args() + [
+    args = otp_runtime_erl_args(toolchain.otpinfo, runfiles = True) + [
         "-noshell",
     ] + fips_erl_args(toolchain.otpinfo, runfiles = True, activate = False) + [
         "-eval",

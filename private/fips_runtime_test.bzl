@@ -1,6 +1,6 @@
 """Runtime and ELF linkage test for FIPS-required OTP toolchains."""
 
-load("//private:beam_info.bzl", "crypto_runtime_files", "erl_env_flags", "fips_erl_args", "otp_runtime_env", "prepare_crypto_runtime", "runtime_path_erl_args", "test_erl_launcher")
+load("//private:beam_info.bzl", "crypto_runtime_files", "erl_env_flags", "fips_erl_args", "otp_runtime_env", "otp_runtime_erl_args", "prepare_crypto_runtime", "test_erl_launcher")
 
 _DRIVER_EVAL = "A=init:get_plain_arguments(),[S|R]=A,C=compile:file(S,[binary,report_errors,report_warnings]),M=element(2,C),B=element(3,C),{module,M}=code:load_binary(M,S,B),M:main(R),halt()."
 
@@ -18,7 +18,7 @@ def _elixir_fips_runtime_test_impl(ctx):
         ctx.label.name + "_crypto_state",
         runfiles = True,
     )
-    args = runtime_path_erl_args() + [
+    args = otp_runtime_erl_args(otp, runfiles = True) + [
         "-noshell",
     ] + fips_erl_args(otp, runfiles = True, activate = False) + [
         "-eval",

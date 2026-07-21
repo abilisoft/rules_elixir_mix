@@ -71,14 +71,17 @@ jobs:
           //test:ecto_analysis_fixture
           //test:elixir_ls_analysis_fixture
           //test:erlang_analysis_fixture
+          //test:escript_analysis_fixture
           //test:eunit_analysis_fixture
           //test:exunit_analysis_fixture
           //test:format_analysis_fixture
+          //test:hex_assets_analysis_fixture
           //test:iex_analysis_fixture
           //test:lcov_analysis_fixture
           //test:local_analysis_fixture
           //test:lock_analysis
           //test:native_analysis_fixture
+          //test:otp_runtime_closure_analysis
           //test:phx_assets_analysis_fixture
           //test:phx_server_analysis_fixture
           //test:provider_crypto_sdk
@@ -115,8 +118,6 @@ jobs:
             runner: ubuntu-24.04-arm
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
-    container:
-      image: elixir@sha256:d430c98a3ba7c97bdfe688e29e8c4378966519c79af04963cc9276f7f2013ecc
     env:
       BAZEL_PLATFORM_FLAGS: --platforms=//:ci_execution_platform_${{ matrix.arch }} --extra_execution_platforms=//:ci_execution_platform_${{ matrix.arch }}
     steps:
@@ -129,15 +130,6 @@ jobs:
           bazelisk-cache: true
           disk-cache: true
           repository-cache: true
-      - name: Package pinned OTP and Elixir runtimes deterministically
-        run: |
-          tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner --format=gnu -czf /tmp/rules-elixir-mix-ci-otp-${{ matrix.arch }}.tar.gz -C /usr/local/lib/erlang .
-          install -m 0644 integration/ELIXIR_VERSION /usr/local/lib/elixir/VERSION
-          tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner --format=gnu -czf /tmp/rules-elixir-mix-ci-elixir-${{ matrix.arch }}.tar.gz -C /usr/local/lib/elixir .
-      - name: Check source-catalog maintenance formatting
-        run: mix format --check-formatted tools/source_catalog.ex tools/source_catalog_test.exs tools/update_source_catalog.exs
-      - name: Test source-catalog maintenance
-        run: elixir tools/source_catalog_test.exs
       - name: Execute Mix, Hex, Rebar, ExUnit, release, and analysis actions
         working-directory: integration
         run: |
@@ -153,8 +145,11 @@ jobs:
             //:direct_erlang_eunit_test \
             //:direct_erlang_reproducibility_test \
             //:format \
+            //:prebuilt_otp_smoke_${{ matrix.arch }} \
             //:release_test \
             //:sobelow \
+            //:source_catalog_format \
+            //:source_catalog_test \
             //:task_test \
             //:test \
             //:typecheck \
@@ -164,8 +159,47 @@ jobs:
           # shellcheck disable=SC2086
           bazel test ${BAZEL_REMOTE_FALLBACK} ${BAZEL_PLATFORM_FLAGS} --remote_header=x-buildbuddy-api-key="${BUILDBUDDY_ORG_API_KEY}" --test_sharding_strategy=forced=2 //:test
           # shellcheck disable=SC2086
-          bazel build ${BAZEL_REMOTE_FALLBACK} ${BAZEL_PLATFORM_FLAGS} --remote_header=x-buildbuddy-api-key="${BUILDBUDDY_ORG_API_KEY}" //:digested_assets
+          bazel build ${BAZEL_REMOTE_FALLBACK} ${BAZEL_PLATFORM_FLAGS} --remote_header=x-buildbuddy-api-key="${BUILDBUDDY_ORG_API_KEY}" //:digested_assets //:locked_live_view_javascript //:locked_sobelow_codegen //:minimal_escript_codegen
           test ! -e bazel-bin/lib_compile_build/.rules_elixir_mix_state
+      - name: Reject an ABI-incompatible bootstrap before source compilation
+        id: incompatible_bootstrap
+        if: matrix.arch == 'x86_64'
+        continue-on-error: true
+        working-directory: integration
+        run: >-
+          bazel test
+          ${BAZEL_REMOTE_FALLBACK}
+          ${BAZEL_PLATFORM_FLAGS}
+          --remote_header=x-buildbuddy-api-key="${BUILDBUDDY_ORG_API_KEY}"
+          //:prebuilt_otp_smoke_arm64_on_x86
+      - name: Require the incompatible bootstrap smoke test to fail
+        if: matrix.arch == 'x86_64'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          SMOKE_OUTCOME: ${{ steps.incompatible_bootstrap.outcome }}
+        with:
+          script: |
+            if (process.env.SMOKE_OUTCOME !== "failure") {
+              core.setFailed(`incompatible bootstrap smoke ended with ${process.env.SMOKE_OUTCOME}`);
+            }
+            const fs = require("fs");
+            const path = require("path");
+            const log = fs.readFileSync(
+              path.join(
+                process.env.GITHUB_WORKSPACE,
+                "integration",
+                "bazel-testlogs",
+                "prebuilt_otp_smoke_arm64_on_x86",
+                "test.log",
+              ),
+              "utf8",
+            );
+            if (!log.includes("Exec format error")) {
+              core.setFailed("incompatible bootstrap did not reach the native ABI boundary");
+            }
+            if (log.includes("Unable to find an execution platform")) {
+              core.setFailed("incompatible bootstrap failed during toolchain resolution");
+            }
       - name: Exercise the writable local cache twice
         working-directory: integration
         run: |
@@ -178,20 +212,33 @@ jobs:
           bazel test ${BAZEL_REMOTE_FALLBACK} ${BAZEL_PLATFORM_FLAGS} --remote_header=x-buildbuddy-api-key="${BUILDBUDDY_ORG_API_KEY}" //:format //:typecheck //:xref
 
   source-toolchain:
+    name: Source toolchain (${{ matrix.arch }}, ${{ matrix.libc }})
     strategy:
       fail-fast: false
       matrix:
         include:
           - arch: x86_64
+            libc: musl
             runner: ubuntu-24.04
-            platform_flags: --platforms=//:source_platform_x86_64 --extra_execution_platforms=//:source_platform_x86_64
+            platform_flags: --platforms=//:source_target_x86_64 --extra_execution_platforms=//:source_execution_x86_64
+            toolchain_name: catalog_source_x86_64
           - arch: arm64
+            libc: musl
+            runner: ubuntu-24.04-arm
+            platform_flags: --platforms=//:source_target_arm64 --extra_execution_platforms=//:source_execution_arm64
+            toolchain_name: catalog_source_arm64
+          - arch: x86_64
+            libc: glibc
             runner: ubuntu-24.04
-            platform_flags: --platforms=//:source_platform_arm64 --extra_execution_platforms=//:source_platform_arm64,//:source_platform_x86_64
+            platform_flags: --platforms=//:source_target_glibc_x86_64 --extra_execution_platforms=//:source_execution_x86_64
+            toolchain_name: catalog_source_glibc_x86_64
+          - arch: arm64
+            libc: glibc
+            runner: ubuntu-24.04-arm
+            platform_flags: --platforms=//:source_target_glibc_arm64 --extra_execution_platforms=//:source_execution_arm64
+            toolchain_name: catalog_source_glibc_arm64
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 180
-    container:
-      image: erlang@sha256:ec20ffd1224a25f6105eec70a684fd2d7f2cf83084dedb669346644bcee4c466
     env:
       BAZEL_PLATFORM_FLAGS: ${{ matrix.platform_flags }}
     steps:
@@ -204,11 +251,16 @@ jobs:
           bazelisk-cache: true
           disk-cache: true
           repository-cache: true
-      - name: Package the checksum-pinned bootstrap runtime
+      - name: Verify the bootstrap ABI before the source build
+        if: ${{ env.BUILDBUDDY_ORG_API_KEY != '' }}
+        working-directory: source_integration
         run: >-
-          tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner
-          --format=gnu -czf /tmp/rules-elixir-mix-ci-otp-bootstrap-x86_64.tar.gz
-          -C /usr/local/lib/erlang .
+          bazel test
+          ${BAZEL_REMOTE_FALLBACK}
+          --platforms=//:source_execution_${{ matrix.arch }}
+          --extra_execution_platforms=//:source_execution_${{ matrix.arch }}
+          --remote_header=x-buildbuddy-api-key="${BUILDBUDDY_ORG_API_KEY}"
+          @elixir_config//${{ matrix.toolchain_name }}:bootstrap_smoke_test
       - name: Test source-built OTP, Elixir, Phoenix, LiveView, FIPS, and release runtime
         if: ${{ env.BUILDBUDDY_ORG_API_KEY != '' }}
         working-directory: source_integration
@@ -234,7 +286,7 @@ jobs:
           bazel build --nobuild
           ${BAZEL_REMOTE_FALLBACK}
           ${BAZEL_PLATFORM_FLAGS}
-          @elixir_config//catalog_source_${{ matrix.arch }}:runtime
+          @elixir_config//${{ matrix.toolchain_name }}:runtime
       - name: Require a warm source-toolchain cache
         if: ${{ env.BUILDBUDDY_ORG_API_KEY != '' }}
         working-directory: source_integration

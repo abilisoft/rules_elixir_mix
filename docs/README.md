@@ -10,7 +10,7 @@ checksum-pinned inputs, resolved toolchains, deterministic outputs, and small
 cacheable actions—while Mix remains responsible for Elixir semantics.
 
 > [!IMPORTANT]
-> [`v0.2.1`](https://github.com/abilisoft/rules_elixir_mix/releases/tag/v0.2.1)
+> [`v0.3.0`](https://github.com/abilisoft/rules_elixir_mix/releases/tag/v0.3.0)
 > is a signed GitHub release for direct commit pinning. It is not published to
 > the Bazel Central Registry, and this project has not published an official
 > runtime archive set. Bring checksum-pinned OTP and Elixir archives. CI proves
@@ -32,6 +32,7 @@ cacheable actions—while Mix remains responsible for Elixir semantics.
 | Publish the BCR module or runtime archives | [Publishing](publishing.md) |
 | Integrate a generic FIPS crypto SDK | [FIPS ownership](source_toolchains.md#backend-neutral-crypto-sdk) |
 | Guide an AI coding agent | [Agent playbook](agents/README.md) |
+| See user-facing changes by release | [Changelog](../CHANGELOG.md) |
 | Understand inherited source/licensing context | [Attribution](attribution.md) |
 
 ## The 30-second model
@@ -62,6 +63,8 @@ the other.
 | Checksum-pinned prebuilt OTP/Elixir consumption | Implemented and integration tested |
 | Deterministic source-runtime archive production | Implemented and analysis tested; real crypto-backed publication matrix pending |
 | Mix and Rebar dependency import from `mix.lock` | Integration tested |
+| Lock-owned Hex asset projection | Integration tested with a non-BEAM consumer |
+| Hermetic Mix escript output used as a Bazel tool | Locally integration tested; complete remote runtime-closure matrix pending |
 | Compile/type/runtime dependency separation | Analysis and Dialyzer tested |
 | ExUnit sharding, EUnit, Common Test | Integration tested |
 | Phoenix, LiveView, assets, releases | Integration tested |

@@ -3,13 +3,17 @@ load(
     "dialyzer_plt",
     "elixir_dialyzer_test",
     "elixir_generated_source",
+    "elixir_prebuilt_release",
     "elixir_protocols",
     "elixir_release_test",
     "erlang_app",
     "erlang_common_test",
     "erlang_eunit_test",
+    "hex_package_assets",
     "mix_coverage_test",
     "mix_credo_test",
+    "mix_deps_update",
+    "mix_escript",
     "mix_format_test",
     "mix_library",
     "mix_local",
@@ -20,17 +24,174 @@ load(
     "mix_test",
     "mix_typecheck_test",
     "mix_xref_test",
+    "otp_prebuilt_release",
+    "otp_runtime_smoke_test",
 )
 load("@rules_elixir_mix//test:analysis_tests.bzl", "fingerprint_equality_test")
-load(":generated_asset.bzl", "generated_asset")
+load(":generated_asset.bzl", "escript_codegen", "escript_write", "generated_asset", "javascript_asset")
+load(":otp_runtime_fixture.bzl", "unverified_otp_runtime_fixture")
 
-filegroup(
-    name = "lazy_html_nif",
-    srcs = select({
-        "@platforms//cpu:arm64": ["@lazy_html_nif_arm64_linux_gnu//file"],
-        "@platforms//cpu:x86_64": ["@lazy_html_nif_x86_64_linux_gnu//file"],
-    }),
+otp_prebuilt_release(
+    name = "prebuilt_otp_x86_64",
+    srcs = ["@otp_runtime_x86_64//:runtime"],
+    boot_file = "@otp_runtime_x86_64//:releases/29/start_clean.boot",
+    erlexec = "@otp_runtime_x86_64//:erts-17.0.3/bin/erlexec",
+    exec_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    fully_static = True,
+    version = "29.0.3",
+    version_marker = "@otp_runtime_x86_64//:releases/29/OTP_VERSION",
     visibility = ["//visibility:public"],
+)
+
+otp_prebuilt_release(
+    name = "prebuilt_otp_arm64",
+    srcs = ["@otp_runtime_arm64//:runtime"],
+    boot_file = "@otp_runtime_arm64//:releases/29/start_clean.boot",
+    erlexec = "@otp_runtime_arm64//:erts-17.0.3/bin/erlexec",
+    exec_compatible_with = [
+        "@platforms//cpu:arm64",
+        "@platforms//os:linux",
+    ],
+    fully_static = True,
+    version = "29.0.3",
+    version_marker = "@otp_runtime_arm64//:releases/29/OTP_VERSION",
+    visibility = ["//visibility:public"],
+)
+
+elixir_prebuilt_release(
+    name = "prebuilt_elixir_x86_64",
+    srcs = ["@elixir_runtime//:runtime"],
+    home_marker = "@elixir_runtime//:bin/elixir",
+    otp = ":prebuilt_otp_x86_64",
+    version = "1.20.2",
+    version_marker = "@elixir_runtime//:VERSION",
+    visibility = ["//visibility:public"],
+)
+
+elixir_prebuilt_release(
+    name = "prebuilt_elixir_arm64",
+    srcs = ["@elixir_runtime//:runtime"],
+    home_marker = "@elixir_runtime//:bin/elixir",
+    otp = ":prebuilt_otp_arm64",
+    version = "1.20.2",
+    version_marker = "@elixir_runtime//:VERSION",
+    visibility = ["//visibility:public"],
+)
+
+otp_runtime_smoke_test(
+    name = "prebuilt_otp_smoke_x86_64",
+    otp = ":prebuilt_otp_x86_64",
+    target_compatible_with = ["@platforms//cpu:x86_64"],
+)
+
+otp_runtime_smoke_test(
+    name = "prebuilt_otp_smoke_arm64",
+    otp = ":prebuilt_otp_arm64",
+    target_compatible_with = ["@platforms//cpu:arm64"],
+)
+
+unverified_otp_runtime_fixture(
+    name = "unverified_prebuilt_otp_arm64",
+    srcs = ["@otp_runtime_arm64//:runtime"],
+    boot_file = "@otp_runtime_arm64//:releases/29/start_clean.boot",
+    erlexec = "@otp_runtime_arm64//:erts-17.0.3/bin/erlexec",
+    version = "29.0.3",
+    version_marker = "@otp_runtime_arm64//:releases/29/OTP_VERSION",
+)
+
+otp_runtime_smoke_test(
+    name = "prebuilt_otp_smoke_arm64_on_x86",
+    otp = ":unverified_prebuilt_otp_arm64",
+    tags = ["manual"],
+    target_compatible_with = ["@platforms//cpu:x86_64"],
+)
+
+elixir_generated_source(
+    name = "source_catalog_module",
+    src = "@rules_elixir_mix//tools:source_catalog.ex",
+    destination = "lib/source_catalog.ex",
+)
+
+elixir_generated_source(
+    name = "source_catalog_update_module",
+    src = "@rules_elixir_mix//tools:source_catalog.ex",
+    destination = "tools/source_catalog.ex",
+)
+
+elixir_generated_source(
+    name = "source_catalog_update_script",
+    src = "@rules_elixir_mix//tools:update_source_catalog.exs",
+    destination = "tools/update_source_catalog.exs",
+)
+
+elixir_generated_source(
+    name = "source_catalog_test_script",
+    src = "@rules_elixir_mix//tools:source_catalog_test.exs",
+    destination = "test/source_catalog_test.exs",
+)
+
+mix_library(
+    name = "source_catalog_lib",
+    srcs = ["source_catalog_fixture/test/test_helper.exs"],
+    app_name = "rules_elixir_mix_source_catalog",
+    data = ["source_catalog_fixture/.formatter.exs"],
+    generated_srcs = [
+        ":source_catalog_module",
+        ":source_catalog_test_script",
+        ":source_catalog_update_module",
+        ":source_catalog_update_script",
+    ],
+    mix_config = "source_catalog_fixture/mix.exs",
+    mix_env = "test",
+)
+
+mix_test(
+    name = "source_catalog_test",
+    srcs = [
+        "source_catalog_fixture/test/test_helper.exs",
+        ":source_catalog_test_script",
+    ],
+    lib = ":source_catalog_lib",
+)
+
+mix_format_test(
+    name = "source_catalog_format",
+    srcs = [],
+    lib = ":source_catalog_lib",
+)
+
+mix_local(
+    name = "source_catalog_update",
+    env = {
+        "SOURCE_CATALOG_PATH": "../../bzlmod/versions.bzl",
+    },
+    lib = ":source_catalog_lib",
+    mix_env = "test",
+    network_policy = "online",
+    task = "run",
+    task_args = ["tools/update_source_catalog.exs"],
+)
+
+mix_library(
+    name = "minimal_escript_lib",
+    srcs = ["escript_fixture/lib/escript_fixture.ex"],
+    app_name = "escript_fixture",
+    mix_config = "escript_fixture/mix.exs",
+    mix_env = "prod",
+)
+
+mix_escript(
+    name = "minimal_escript",
+    lib = ":minimal_escript_lib",
+    output_name = "escript_fixture_tool",
+)
+
+escript_write(
+    name = "minimal_escript_codegen",
+    tool = ":minimal_escript",
 )
 
 erlang_app(
@@ -99,9 +260,9 @@ erlang_app(
     version = "0.1.0",
 )
 
-# The prebuilt VM's native shared-library closure is part of the immutable
-# execution image contract. Its digest is therefore present in Bazel's
-# execution-platform properties and in toolchain resolution, not merely in CI.
+# The prebuilt fixture is a statically linked VM. The runtime constraint still
+# distinguishes its OTP/Elixir tuple, while the execution platform needs no
+# distro image or host libc contract.
 constraint_setting(
     name = "execution_image",
     visibility = ["//visibility:public"],
@@ -124,7 +285,6 @@ platform(
     exec_properties = {
         "Arch": "amd64",
         "OSFamily": "linux",
-        "container-image": "docker://elixir@sha256:d430c98a3ba7c97bdfe688e29e8c4378966519c79af04963cc9276f7f2013ecc",
     },
 )
 
@@ -145,7 +305,6 @@ platform(
     exec_properties = {
         "Arch": "arm64",
         "OSFamily": "linux",
-        "container-image": "docker://elixir@sha256:d430c98a3ba7c97bdfe688e29e8c4378966519c79af04963cc9276f7f2013ecc",
     },
 )
 
@@ -169,7 +328,6 @@ mix_library(
         "@mix_deps//:bandit",
         "@mix_deps//:ecto_sql",
         "@mix_deps//:jason",
-        "@mix_deps//:lazy_html",
         "@mix_deps//:phoenix",
         "@mix_deps//:phoenix_html",
         "@mix_deps//:phoenix_live_view",
@@ -181,6 +339,13 @@ mix_test(
     name = "test",
     srcs = glob(["test/**/*.exs"]),
     lib = ":lib",
+)
+
+mix_deps_update(
+    name = "update_dependencies",
+    hex = "@hex_pm//:lib",
+    lib = ":lib",
+    mix_env = "test",
 )
 
 mix_coverage_test(
@@ -268,6 +433,34 @@ generated_asset(
     name = "generated_static_input",
 )
 
+hex_package_assets(
+    name = "locked_live_view_assets",
+    package = "@mix_deps//:phoenix_live_view",
+    paths = ["priv/static/phoenix_live_view.esm.js"],
+)
+
+javascript_asset(
+    name = "locked_live_view_javascript",
+    src = ":locked_live_view_assets",
+)
+
+mix_escript(
+    name = "locked_sobelow_escript",
+    lib = "@mix_deps//:sobelow",
+    output_name = "sobelow",
+)
+
+escript_codegen(
+    name = "locked_sobelow_codegen",
+    srcs = glob([
+        "config/*.exs",
+        "lib/**/*.ex",
+    ]) + ["mix.exs"],
+    root = ".",
+    router = "lib/integration_web/router.ex",
+    tool = ":locked_sobelow_escript",
+)
+
 generated_asset(
     name = "generated_elixir_input",
     content = "defmodule Integration.GeneratedByBazel do\n  @moduledoc false\n\n  def value, do: :generated\nend\n",
@@ -334,7 +527,6 @@ mix_library(
         "@mix_deps//:bandit",
         "@mix_deps//:ecto_sql",
         "@mix_deps//:jason",
-        "@mix_deps//:lazy_html",
         "@mix_deps//:phoenix",
         "@mix_deps//:phoenix_html",
         "@mix_deps//:phoenix_live_view",

@@ -1,4 +1,7 @@
-exports_files(["MODULE.bazel"])
+exports_files([
+    "MODULE.bazel",
+    "repository_integrity.bzl",
+])
 
 platform(
     name = "ci_execution_platform_x86_64",

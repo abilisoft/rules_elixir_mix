@@ -1,6 +1,9 @@
 %% Reproducibility checks for source-built OTP and Elixir artifacts.
 -module(artifact_normalizer).
--export([normalize_tree/3, normalize_beams/3, normalize_elf_runtime/3, prune_script_launchers/1,
+-export([normalize_tree/3, normalize_beams/3, normalize_elf_runtime/3, wrap_dynamic_executables/2,
+         assert_contained_symlinks/1, assert_declared_elf_closure/2, assert_dynamic_symbols/2,
+         assert_static_executables/1,
+         assert_wrapped_executables/1, prune_script_launchers/1,
          scrub_erts_build_metadata/1, scrub_erts_commandline_flags/1,
          assert_absent/2, assert_beams_absent/2]).
 
@@ -25,6 +28,445 @@ normalize_elf_runtime(Root, Interpreter0, Runpath0) ->
     Interpreter = iolist_to_binary(Interpreter0),
     Runpath = iolist_to_binary(Runpath0),
     walk(Root, fun(Path) -> normalize_elf_file(Path, Interpreter, Runpath) end).
+
+wrap_dynamic_executables(Root, Wrapper) ->
+    {ok, WrapperInfo} = file:read_file_info(Wrapper),
+    {ok, WrapperBinary} = file:read_file(Wrapper),
+    true = WrapperInfo#file_info.mode band 8#111 =/= 0,
+    true = is_static_elf(WrapperBinary),
+    walk(Root, fun(Path) -> wrap_dynamic_executable(Path, Wrapper, WrapperInfo) end).
+
+wrap_dynamic_executable(Path, Wrapper, WrapperInfo) ->
+    {ok, Info} = file:read_file_info(Path),
+    {ok, Binary} = file:read_file(Path),
+    case Info#file_info.mode band 8#111 =/= 0 andalso has_elf_interpreter(Binary) of
+        false -> ok;
+        true ->
+            Real = filename:join(filename:dirname(Path), ".real-" ++ filename:basename(Path)),
+            false = filelib:is_file(Real),
+            ok = file:rename(Path, Real),
+            {ok, _} = file:copy(Wrapper, Path),
+            {ok, InstalledInfo} = file:read_file_info(Path),
+            ok = file:write_file_info(
+                Path,
+                InstalledInfo#file_info{mode = WrapperInfo#file_info.mode}
+            )
+    end.
+
+assert_static_executables(Root) ->
+    walk(Root, fun(Path) ->
+        {ok, Info} = file:read_file_info(Path),
+        {ok, Binary} = file:read_file(Path),
+        case Info#file_info.mode band 8#111 =/= 0 andalso has_elf_interpreter(Binary) of
+            true -> erlang:error({dynamic_executable_in_static_runtime, Path});
+            false -> ok
+        end
+    end).
+
+assert_wrapped_executables(Root) ->
+    walk(Root, fun(Path) ->
+        {ok, Info} = file:read_file_info(Path),
+        {ok, Binary} = file:read_file(Path),
+        case Info#file_info.mode band 8#111 =/= 0 andalso has_elf_interpreter(Binary) of
+            false -> ok;
+            true ->
+                Name = filename:basename(Path),
+                case lists:prefix(".real-", Name) of
+                    false -> erlang:error({unwrapped_dynamic_executable, Path});
+                    true ->
+                        Launcher = filename:join(
+                            filename:dirname(Path),
+                            lists:nthtail(length(".real-"), Name)
+                        ),
+                        true = filelib:is_regular(Launcher),
+                        {ok, LauncherInfo} = file:read_file_info(Launcher),
+                        {ok, LauncherBinary} = file:read_file(Launcher),
+                        true = LauncherInfo#file_info.mode band 8#111 =/= 0,
+                        true = is_static_elf(LauncherBinary)
+                end
+        end
+    end).
+
+assert_declared_elf_closure(RuntimeRoot0, DeclaredRoots0) ->
+    RuntimeRoot = normalize_path(RuntimeRoot0),
+    Roots = declared_root_specs([RuntimeRoot | DeclaredRoots0]),
+    RuntimePaths = declared_paths(RuntimeRoot),
+    DeclaredPaths = lists:usort(lists:append([
+        declared_paths(maps:get(path, Root))
+        || Root <- Roots
+    ])),
+    Providers = lists:foldl(
+        fun(Path, Accumulator) -> add_elf_provider(Path, Roots, Accumulator) end,
+        #{},
+        DeclaredPaths
+    ),
+    RuntimeElfs = lists:usort(lists:filtermap(
+        fun(Path) -> declared_elf(Path, Roots) end,
+        RuntimePaths
+    )),
+    validate_elf_queue(RuntimeElfs, Providers, #{}).
+
+assert_dynamic_symbols(Path, Required0) ->
+    {ok, Binary} = file:read_file(Path),
+    Required = lists:usort(Required0),
+    Available = dynamic_symbols(Binary),
+    case Required -- Available of
+        [] -> ok;
+        Missing -> erlang:error({missing_dynamic_symbols, Path, Missing})
+    end.
+
+assert_contained_symlinks(Root0) ->
+    Root = normalize_path(Root0),
+    Roots = declared_root_specs([Root]),
+    lists:foreach(
+        fun(Path) ->
+            case file:read_link_info(Path) of
+                {ok, #file_info{type = symlink}} ->
+                    _ = resolve_declared_path(Path, Roots, []),
+                    ok;
+                {ok, _Info} ->
+                    ok;
+                Error ->
+                    erlang:error({declared_symlink_path_unavailable, Path, Error})
+            end
+        end,
+        declared_paths(Root)
+    ).
+
+declared_root_specs(Paths) ->
+    lists:map(fun(Path0) ->
+        Path = normalize_path(Path0),
+        case file:read_link_info(Path) of
+            {ok, #file_info{type = directory}} -> #{path => Path, type => directory};
+            {ok, #file_info{type = regular}} -> #{path => Path, type => regular};
+            {ok, #file_info{type = symlink}} -> #{path => Path, type => symlink};
+            {ok, Info} -> erlang:error({unsupported_declared_elf_root, Path, Info#file_info.type});
+            Error -> erlang:error({declared_elf_root_unavailable, Path, Error})
+        end
+    end, lists:usort([normalize_path(Path) || Path <- Paths])).
+
+declared_paths(Path) ->
+    case file:read_link_info(Path) of
+        {ok, #file_info{type = directory}} ->
+            {ok, Children} = file:list_dir(Path),
+            lists:append([
+                declared_paths(filename:join(Path, Child))
+                || Child <- lists:sort(Children)
+            ]);
+        {ok, #file_info{type = regular}} ->
+            [Path];
+        {ok, #file_info{type = symlink}} ->
+            [Path];
+        {ok, _Info} ->
+            [];
+        Error ->
+            erlang:error({declared_elf_path_unavailable, Path, Error})
+    end.
+
+add_elf_provider(Path, Roots, Providers) ->
+    case declared_elf(Path, Roots) of
+        false ->
+            Providers;
+        {true, Resolved} ->
+            Name = filename:basename(Path),
+            maps:update_with(
+                Name,
+                fun(Paths) -> lists:usort([Resolved | Paths]) end,
+                [Resolved],
+                Providers
+            )
+    end.
+
+declared_elf(Path, Roots) ->
+    case resolve_declared_path(Path, Roots, []) of
+        {directory, _Resolved} ->
+            false;
+        {regular, Resolved} ->
+            {ok, Binary} = file:read_file(Resolved),
+            case Binary of
+                <<16#7f, $E, $L, $F, 2, 1, _/binary>> -> {true, Resolved};
+                <<16#7f, $E, $L, $F, _/binary>> ->
+                    erlang:error({unsupported_elf_format, Path});
+                _ -> false
+            end
+    end.
+
+resolve_declared_path(Path0, Roots, Seen) ->
+    Path = normalize_path(Path0),
+    true = within_declared_roots(Path, Roots),
+    case lists:member(Path, Seen) of
+        true -> erlang:error({declared_elf_symlink_cycle, lists:reverse([Path | Seen])});
+        false -> ok
+    end,
+    case file:read_link_info(Path) of
+        {ok, #file_info{type = directory}} ->
+            {directory, Path};
+        {ok, #file_info{type = regular}} ->
+            {regular, Path};
+        {ok, #file_info{type = symlink}} ->
+            {ok, Target} = file:read_link(Path),
+            case filename:pathtype(Target) of
+                relative ->
+                    Next = normalize_path(filename:join(filename:dirname(Path), Target)),
+                    case within_declared_roots(Next, Roots) of
+                        true -> resolve_declared_path(Next, Roots, [Path | Seen]);
+                        false -> erlang:error({declared_elf_symlink_escape, Path, Target})
+                    end;
+                _ ->
+                    case bazel_materialization_link(Path, Target) of
+                        true -> resolve_materialized_path(Path, normalize_path(Target), Roots, Seen);
+                        false -> erlang:error({absolute_declared_elf_symlink, Path, Target})
+                    end
+            end;
+        {ok, Info} ->
+            erlang:error({unsupported_declared_elf_path, Path, Info#file_info.type});
+        Error ->
+            erlang:error({declared_elf_path_unavailable, Path, Error})
+    end.
+
+resolve_materialized_path(LogicalPath, PhysicalPath, Roots, Seen) ->
+    case file:read_link_info(PhysicalPath) of
+        {ok, #file_info{type = directory}} ->
+            {directory, LogicalPath};
+        {ok, #file_info{type = regular}} ->
+            {regular, LogicalPath};
+        {ok, #file_info{type = symlink}} ->
+            {ok, Target} = file:read_link(PhysicalPath),
+            case filename:pathtype(Target) of
+                relative ->
+                    Next = normalize_path(filename:join(filename:dirname(LogicalPath), Target)),
+                    case within_declared_roots(Next, Roots) of
+                        true -> resolve_declared_path(Next, Roots, [LogicalPath | Seen]);
+                        false -> erlang:error({declared_elf_symlink_escape, LogicalPath, Target})
+                    end;
+                _ ->
+                    erlang:error({absolute_declared_elf_symlink, LogicalPath, Target})
+            end;
+        {ok, Info} ->
+            erlang:error({unsupported_declared_elf_path, LogicalPath, Info#file_info.type});
+        Error ->
+            erlang:error({declared_elf_path_unavailable, LogicalPath, Error})
+    end.
+
+bazel_materialization_link(Path, Target) ->
+    case {execroot_relative_path(Path), execroot_relative_path(Target)} of
+        {{ok, Relative}, {ok, Relative}} -> true;
+        _ -> false
+    end.
+
+execroot_relative_path(Path) ->
+    Binary = iolist_to_binary(Path),
+    Marker = <<"/execroot/">>,
+    case binary:matches(Binary, Marker) of
+        [] ->
+            error;
+        Matches ->
+            {Position, Length} = lists:last(Matches),
+            TailOffset = Position + Length,
+            Tail = binary:part(Binary, TailOffset, byte_size(Binary) - TailOffset),
+            case binary:split(Tail, <<"/">>) of
+                [_Workspace, Relative] when byte_size(Relative) > 0 ->
+                    {ok, Relative};
+                _ ->
+                    error
+            end
+    end.
+
+within_declared_roots(Path, Roots) ->
+    lists:any(fun(Root) ->
+        RootPath = maps:get(path, Root),
+        case maps:get(type, Root) of
+            directory -> Path =:= RootPath orelse lists:prefix(RootPath ++ "/", Path);
+            _ -> Path =:= RootPath
+        end
+    end, Roots).
+
+normalize_path(Path) ->
+    Parts = filename:split(filename:absname(Path)),
+    filename:join(lists:reverse(normalize_path_parts(Parts, []))).
+
+normalize_path_parts([], Accumulator) ->
+    Accumulator;
+normalize_path_parts(["." | Rest], Accumulator) ->
+    normalize_path_parts(Rest, Accumulator);
+normalize_path_parts([".." | Rest], [Current | Accumulator]) when Current =/= "/" ->
+    normalize_path_parts(Rest, Accumulator);
+normalize_path_parts([".." | _Rest], _Accumulator) ->
+    erlang:error(path_escapes_filesystem_root);
+normalize_path_parts([Part | Rest], Accumulator) ->
+    normalize_path_parts(Rest, [Part | Accumulator]).
+
+validate_elf_queue([], _Providers, _Visited) ->
+    ok;
+validate_elf_queue([Path | Rest], Providers, Visited) ->
+    case maps:is_key(Path, Visited) of
+        true ->
+            validate_elf_queue(Rest, Providers, Visited);
+        false ->
+            {ok, Binary} = file:read_file(Path),
+            Dependencies = needed_libraries(Binary),
+            Resolved = [resolve_elf_dependency(Path, Dependency, Providers) || Dependency <- Dependencies],
+            validate_elf_queue(Rest ++ Resolved, Providers, Visited#{Path => true})
+    end.
+
+resolve_elf_dependency(Consumer, Dependency, Providers) ->
+    case Dependency =:= filename:basename(Dependency) andalso Dependency =/= "" of
+        false -> erlang:error({invalid_elf_dependency_name, Consumer, Dependency});
+        true -> ok
+    end,
+    case maps:get(Dependency, Providers, []) of
+        [] -> erlang:error({undeclared_elf_dependency, Consumer, Dependency});
+        [Provider] -> Provider;
+        Candidates -> erlang:error({ambiguous_elf_dependency, Consumer, Dependency, Candidates})
+    end.
+
+needed_libraries(<<16#7f, $E, $L, $F, 2, 1, _/binary>> = Binary) ->
+    {_ProgramOffset, SectionOffset, _ProgramEntrySize, _ProgramCount,
+     SectionEntrySize, SectionCount} = elf_layout(Binary),
+    Sections = elf_sections(Binary, SectionOffset, SectionEntrySize, SectionCount),
+    lists:usort(lists:append([
+        needed_from_dynamic_section(Binary, Section, Sections)
+        || Section <- Sections,
+           maps:get(type, Section) =:= 6
+    ])).
+
+dynamic_symbols(<<16#7f, $E, $L, $F, 2, 1, _/binary>> = Binary) ->
+    {_ProgramOffset, SectionOffset, _ProgramEntrySize, _ProgramCount,
+     SectionEntrySize, SectionCount} = elf_layout(Binary),
+    Sections = elf_sections(Binary, SectionOffset, SectionEntrySize, SectionCount),
+    lists:usort(lists:append([
+        symbols_from_dynamic_section(Binary, Section, Sections)
+        || Section <- Sections,
+           maps:get(type, Section) =:= 11
+    ]));
+dynamic_symbols(<<16#7f, $E, $L, $F, _/binary>>) ->
+    erlang:error(unsupported_elf_format);
+dynamic_symbols(_) ->
+    erlang:error(not_an_elf_file).
+
+symbols_from_dynamic_section(Binary, Symbols, Sections) ->
+    Link = maps:get(link, Symbols),
+    case Link < length(Sections) of
+        true -> ok;
+        false -> erlang:error({invalid_elf_string_table_index, Link})
+    end,
+    StringTable = lists:nth(Link + 1, Sections),
+    symbols_from_dynamic_entries(
+        Binary,
+        maps:get(offset, Symbols),
+        maps:get(size, Symbols),
+        maps:get(entry_size, Symbols),
+        maps:get(offset, StringTable),
+        []
+    ).
+
+symbols_from_dynamic_entries(_Binary, _Offset, _Remaining, 0, _StringsOffset, _Accumulator) ->
+    erlang:error(invalid_elf_symbol_entry_size);
+symbols_from_dynamic_entries(_Binary, _Offset, Remaining, EntrySize, _StringsOffset, Accumulator)
+        when Remaining < EntrySize ->
+    lists:reverse(Accumulator);
+symbols_from_dynamic_entries(Binary, Offset, Remaining, EntrySize, StringsOffset, Accumulator) ->
+    Entry = binary:part(Binary, Offset, EntrySize),
+    <<NameOffset:32/little-unsigned-integer,
+      _Info:8, _Other:8,
+      SectionIndex:16/little-unsigned-integer,
+      _Value:64/little-unsigned-integer,
+      _Size:64/little-unsigned-integer,
+      _/binary>> = Entry,
+    Updated = case NameOffset =/= 0 andalso SectionIndex =/= 0 of
+        true -> [read_c_string(Binary, StringsOffset + NameOffset) | Accumulator];
+        false -> Accumulator
+    end,
+    symbols_from_dynamic_entries(
+        Binary,
+        Offset + EntrySize,
+        Remaining - EntrySize,
+        EntrySize,
+        StringsOffset,
+        Updated
+    ).
+
+elf_sections(_Binary, _SectionOffset, _SectionEntrySize, 0) ->
+    [];
+elf_sections(Binary, SectionOffset, SectionEntrySize, SectionCount) ->
+    [
+        elf_section(Binary, SectionOffset, SectionEntrySize, Index)
+        || Index <- lists:seq(0, SectionCount - 1)
+    ].
+
+needed_from_dynamic_section(Binary, Dynamic, Sections) ->
+    Link = maps:get(link, Dynamic),
+    case Link < length(Sections) of
+        true -> ok;
+        false -> erlang:error({invalid_elf_string_table_index, Link})
+    end,
+    StringTable = lists:nth(Link + 1, Sections),
+    needed_from_dynamic_entries(
+        Binary,
+        maps:get(offset, Dynamic),
+        maps:get(size, Dynamic),
+        maps:get(entry_size, Dynamic),
+        maps:get(offset, StringTable),
+        []
+    ).
+
+needed_from_dynamic_entries(_Binary, _Offset, _Remaining, 0, _StringsOffset, _Accumulator) ->
+    erlang:error(invalid_elf_dynamic_entry_size);
+needed_from_dynamic_entries(_Binary, _Offset, Remaining, EntrySize, _StringsOffset, Accumulator)
+        when Remaining < EntrySize ->
+    lists:reverse(Accumulator);
+needed_from_dynamic_entries(Binary, Offset, Remaining, EntrySize, StringsOffset, Accumulator) ->
+    Entry = binary:part(Binary, Offset, EntrySize),
+    <<Tag:64/little-signed-integer, Value:64/little-unsigned-integer, _/binary>> = Entry,
+    Updated = case Tag of
+        1 -> [read_c_string(Binary, StringsOffset + Value) | Accumulator];
+        _ -> Accumulator
+    end,
+    case Tag of
+        0 -> lists:reverse(Updated);
+        _ -> needed_from_dynamic_entries(
+            Binary,
+            Offset + EntrySize,
+            Remaining - EntrySize,
+            EntrySize,
+            StringsOffset,
+            Updated
+        )
+    end.
+
+read_c_string(Binary, Offset) ->
+    Tail = binary:part(Binary, Offset, byte_size(Binary) - Offset),
+    case binary:split(Tail, <<0>>) of
+        [Value, _Rest] -> binary_to_list(Value);
+        [_Unterminated] -> erlang:error({unterminated_elf_string, Offset})
+    end.
+
+is_static_elf(<<16#7f, $E, $L, $F, 2, 1, _/binary>> = Binary) ->
+    not has_elf_interpreter(Binary);
+is_static_elf(_) ->
+    false.
+
+has_elf_interpreter(<<16#7f, $E, $L, $F, 2, 1, _/binary>> = Binary) ->
+    {ProgramOffset, _SectionOffset, ProgramEntrySize, ProgramCount,
+     _SectionEntrySize, _SectionCount} = elf_layout(Binary),
+    has_program_header(Binary, ProgramOffset, ProgramEntrySize, ProgramCount, 3);
+has_elf_interpreter(<<16#7f, $E, $L, $F, _/binary>>) ->
+    erlang:error(unsupported_elf_format);
+has_elf_interpreter(_) ->
+    false.
+
+has_program_header(_Binary, _Offset, _EntrySize, 0, _Type) ->
+    false;
+has_program_header(Binary, Offset, EntrySize, Count, WantedType) ->
+    Header = binary:part(Binary, Offset, EntrySize),
+    <<Type:32/little-unsigned-integer, _/binary>> = Header,
+    Type =:= WantedType orelse has_program_header(
+        Binary,
+        Offset + EntrySize,
+        EntrySize,
+        Count - 1,
+        WantedType
+    ).
 
 normalize_elf_file(Path, Interpreter, Runpath) ->
     {ok, Binary} = file:read_file(Path),

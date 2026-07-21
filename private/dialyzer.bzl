@@ -1,6 +1,6 @@
 """Cacheable Dialyzer PLTs and shell-free BEAM analysis tests."""
 
-load("//private:beam_info.bzl", "ErlangAppInfo", "crypto_runtime_files", "erl_env_flags", "execution_erlexec", "execution_erts_bin", "fips_erl_args", "flat_type_deps", "otp_runtime_env", "path_join", "prepare_crypto_runtime", "runtime_path_erl_args", "test_erl_launcher")
+load("//private:beam_info.bzl", "ErlangAppInfo", "crypto_runtime_files", "erl_env_flags", "execution_erlexec", "execution_erts_bin", "fips_erl_args", "flat_type_deps", "otp_runtime_env", "otp_runtime_erl_args", "path_join", "prepare_crypto_runtime", "test_erl_launcher")
 
 DialyzerPltInfo = provider(
     doc = "A cacheable Dialyzer persistent lookup table.",
@@ -299,7 +299,7 @@ def _elixir_dialyzer_test_impl(ctx):
     missing = sorted([name for name in required_plt_apps if name not in plt_info.apps])
     if missing:
         fail("Dialyzer PLT is missing compile/type dependencies {}; build it with deps = [...] rather than the analyzed roots".format(missing))
-    args = runtime_path_erl_args() + [
+    args = otp_runtime_erl_args(toolchain.otpinfo, runfiles = True) + [
         "-noshell",
         "+fnu",
     ] + fips_erl_args(toolchain.otpinfo, runfiles = True, activate = False) + [

@@ -1,6 +1,6 @@
 """Direct, shell-free Mix execution helpers."""
 
-load("//private:beam_info.bzl", "ErlangAppInfo", "crypto_runtime_files", "erl_env_flags", "execution_erlexec", "execution_erts_bin", "execution_root_path", "fips_erl_args", "flat_deps", "otp_runtime_env", "path_join", "prepare_crypto_runtime", "runtime_path_erl_args", "test_erl_launcher")
+load("//private:beam_info.bzl", "ErlangAppInfo", "crypto_runtime_files", "erl_env_flags", "execution_erlexec", "execution_erts_bin", "execution_root_path", "fips_erl_args", "flat_deps", "otp_runtime_env", "otp_runtime_erl_args", "path_join", "prepare_crypto_runtime", "test_erl_launcher")
 load("//private:mix_info.bzl", "MixProjectInfo")
 
 _MIX_EVAL = """
@@ -333,6 +333,44 @@ try do
     Mix.ProjectStack.merge_config(consolidate_protocols: true)
   end
 
+  case System.get_env("RULES_ELIXIR_MIX_ESCRIPT_OUTPUT") do
+    nil -> :ok
+    output ->
+      deps =
+        case System.get_env("RULES_ELIXIR_MIX_ESCRIPT_DEPS_MANIFEST") do
+          nil -> Process.get({:rules_elixir_mix, :project_deps}, Mix.Project.config()[:deps] || [])
+          manifest ->
+            manifest = absolute_input.(manifest)
+            {:ok, [apps]} = :file.consult(String.to_charlist(manifest))
+            Enum.map(apps, fn app ->
+              {
+                String.to_atom(to_string(app)),
+                [path: Path.join(System.fetch_env!("MIX_DEPS_PATH"), to_string(app)), override: true]
+              }
+            end)
+        end
+      escript = Mix.Project.config()[:escript] || []
+      escript =
+        escript
+        |> Keyword.put(:path, Path.expand(output, execution_root))
+        |> Keyword.put(
+          :shebang,
+          System.fetch_env!("RULES_ELIXIR_MIX_ESCRIPT_SHEBANG")
+        )
+      escript =
+        case System.get_env("RULES_ELIXIR_MIX_ESCRIPT_EMU_ARGS") do
+          nil -> escript
+          rules_args ->
+            configured = escript[:emu_args] || ""
+            Keyword.put(escript, :emu_args, Enum.join([configured, rules_args], " "))
+        end
+      Mix.ProjectStack.merge_config(
+        deps: deps,
+        escript: escript
+      )
+      Mix.Dep.clear_cached()
+  end
+
   args = Enum.map(System.argv(), fn
     "__RULES_ELIXIR_MIX_OUTPUT__" ->
       System.fetch_env!("RULES_ELIXIR_MIX_OUTPUT") |> Path.expand(execution_root)
@@ -481,26 +519,6 @@ try do
         |> Path.join("releases/start_erl.data")
         |> File.read!()
         |> String.split()
-      case System.get_env("RULES_ELIXIR_MIX_CRYPTO_EXECUTION_WRAPPER") do
-        nil -> :ok
-        relative_wrapper ->
-          wrapper = Path.join(sdk_root, relative_wrapper)
-          erts_bin = Path.join(release_root, "erts-#{erts_version}/bin")
-          erts_bin
-          |> File.ls!()
-          |> Enum.sort()
-          |> Enum.each(fn child ->
-            path = Path.join(erts_bin, child)
-            stat = File.lstat!(path)
-            if stat.type == :regular and Bitwise.band(stat.mode, 0o111) != 0 do
-              real = Path.join(erts_bin, ".real-#{child}")
-              File.rm_rf!(real)
-              File.rename!(path, real)
-              File.cp!(wrapper, path)
-              File.chmod!(path, 0o755)
-            end
-          end)
-      end
       launch_name = System.fetch_env!("RULES_ELIXIR_MIX_CRYPTO_LAUNCH_NAME")
       launcher = Path.join([release_root, "bin", launch_name])
       launch_tool = Path.join([
@@ -518,7 +536,7 @@ try do
       File.rm_rf!(launcher)
       File.cp!(launch_tool, launcher)
       File.chmod!(launcher, 0o755)
-      File.write!(launcher <> ".rules_fips.json", launch_config)
+      File.write!(launcher <> ".rules_elixir_mix.crypto.json", launch_config)
   end
   case System.get_env("RULES_ELIXIR_MIX_RELEASE_PROTOCOLS") do
     nil -> :ok
@@ -808,7 +826,7 @@ def mix_action_env(ctx, mix_env, build_root, deps, internal_extra = {}, user_ext
         "TZ": "UTC",
     })
     if toolchain.otpinfo.fips == "required":
-        env["ERL_AFLAGS"] = erl_env_flags(runtime_path_erl_args() + ["-crypto", "fips_mode", "true"])
+        env["ERL_AFLAGS"] = erl_env_flags(otp_runtime_erl_args(toolchain.otpinfo) + ["-crypto", "fips_mode", "true"])
         env["RULES_ELIXIR_MIX_FIPS_REQUIRED"] = "true"
     env.update(user_extra)
     env.update(internal_extra)
@@ -942,6 +960,15 @@ def runfile_path_from_project(mix_info, file):
     Returns:
       The source path relative to the staged Mix project.
     """
+    mapped = {
+        entry.destination: True
+        for entry in mix_info.project_entries
+        if entry.source.path == file.path
+    }
+    if len(mapped) == 1:
+        return sorted(mapped.keys())[0]
+    if len(mapped) > 1:
+        fail("test input {} maps to multiple Mix project paths: {}".format(file, sorted(mapped.keys())))
     root = mix_info.mix_config.short_path.rsplit("/", 1)[0] if "/" in mix_info.mix_config.short_path else ""
     relative = _project_relative_path(file, root)
     if relative == None:
@@ -1057,7 +1084,7 @@ def mix_test_result(ctx, task, task_args, srcs, data, tools):
         project_entries = mix_info.project_entries,
         short_path = True,
     )
-    erl_args = runtime_path_erl_args() + [
+    erl_args = otp_runtime_erl_args(toolchain.otpinfo, runfiles = True) + [
         "-noshell",
         "+fnu",
     ] + fips_erl_args(toolchain.otpinfo, runfiles = True, activate = False) + [
@@ -1072,7 +1099,7 @@ def mix_test_result(ctx, task, task_args, srcs, data, tools):
         _MIX_EVAL,
         "--",
     ] + args
-    child_erl_aflags = erl_env_flags(runtime_path_erl_args() + (["-crypto", "fips_mode", "true"] if toolchain.otpinfo.fips == "required" else []))
+    child_erl_aflags = erl_env_flags(otp_runtime_erl_args(toolchain.otpinfo, runfiles = True) + (["-crypto", "fips_mode", "true"] if toolchain.otpinfo.fips == "required" else []))
 
     erl_lib_targets = dependency_targets if task == "compile" else app_targets
     erl_libs = [path_join(toolchain.elixirinfo.elixir_home_short_path, "lib")]
