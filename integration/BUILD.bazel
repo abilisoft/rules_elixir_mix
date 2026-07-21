@@ -25,6 +25,7 @@ load(
     "mix_typecheck_test",
     "mix_xref_test",
     "otp_prebuilt_release",
+    "otp_runtime_rejection_test",
     "otp_runtime_smoke_test",
 )
 load("@rules_elixir_mix//test:analysis_tests.bzl", "fingerprint_equality_test")
@@ -102,10 +103,10 @@ unverified_otp_runtime_fixture(
     version_marker = "@otp_runtime_arm64//:releases/29/OTP_VERSION",
 )
 
-otp_runtime_smoke_test(
-    name = "prebuilt_otp_smoke_arm64_on_x86",
+otp_runtime_rejection_test(
+    name = "prebuilt_otp_rejection_arm64_on_x86",
+    expected_error = "Exec format error",
     otp = ":unverified_prebuilt_otp_arm64",
-    tags = ["manual"],
     target_compatible_with = ["@platforms//cpu:x86_64"],
 )
 

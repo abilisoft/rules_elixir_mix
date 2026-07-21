@@ -7,6 +7,7 @@ exports_files([
     "erlang_app_driver.erl",
     "fips_runtime_test.erl",
     "otp_build_driver.erl",
+    "otp_runtime_rejection_test.erl",
     "release_runtime_test.bzl",
     "release_runtime_test.erl",
     "runtime_archive_driver.erl",

@@ -162,44 +162,14 @@ jobs:
           bazel build ${BAZEL_REMOTE_FALLBACK} ${BAZEL_PLATFORM_FLAGS} --remote_header=x-buildbuddy-api-key="${BUILDBUDDY_ORG_API_KEY}" //:digested_assets //:locked_live_view_javascript //:locked_sobelow_codegen //:minimal_escript_codegen
           test ! -e bazel-bin/lib_compile_build/.rules_elixir_mix_state
       - name: Reject an ABI-incompatible bootstrap before source compilation
-        id: incompatible_bootstrap
         if: matrix.arch == 'x86_64'
-        continue-on-error: true
         working-directory: integration
         run: >-
           bazel test
           ${BAZEL_REMOTE_FALLBACK}
           ${BAZEL_PLATFORM_FLAGS}
           --remote_header=x-buildbuddy-api-key="${BUILDBUDDY_ORG_API_KEY}"
-          //:prebuilt_otp_smoke_arm64_on_x86
-      - name: Require the incompatible bootstrap smoke test to fail
-        if: matrix.arch == 'x86_64'
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
-        env:
-          SMOKE_OUTCOME: ${{ steps.incompatible_bootstrap.outcome }}
-        with:
-          script: |
-            if (process.env.SMOKE_OUTCOME !== "failure") {
-              core.setFailed(`incompatible bootstrap smoke ended with ${process.env.SMOKE_OUTCOME}`);
-            }
-            const fs = require("fs");
-            const path = require("path");
-            const log = fs.readFileSync(
-              path.join(
-                process.env.GITHUB_WORKSPACE,
-                "integration",
-                "bazel-testlogs",
-                "prebuilt_otp_smoke_arm64_on_x86",
-                "test.log",
-              ),
-              "utf8",
-            );
-            if (!log.includes("Exec format error")) {
-              core.setFailed("incompatible bootstrap did not reach the native ABI boundary");
-            }
-            if (log.includes("Unable to find an execution platform")) {
-              core.setFailed("incompatible bootstrap failed during toolchain resolution");
-            }
+          //:prebuilt_otp_rejection_arm64_on_x86
       - name: Exercise the writable local cache twice
         working-directory: integration
         run: |

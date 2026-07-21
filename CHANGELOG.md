@@ -9,6 +9,14 @@ All notable user-facing changes are recorded here. Signed Git tags and GitHub
 releases identify the exact source; this project is not yet published to the
 Bazel Central Registry.
 
+## 0.3.1 - 2026-07-21
+
+### Fixed
+
+- Expected OTP ABI-rejection coverage is now a successful Bazel test driven by
+  a compatible declared OTP toolchain, so BES providers do not publish an
+  intentional child-process rejection as a failed commit status.
+
 ## 0.3.0 - 2026-07-21
 
 ### Added
