@@ -1,7 +1,8 @@
 %% Reproducibility checks for source-built OTP and Elixir artifacts.
 -module(artifact_normalizer).
 -export([normalize_tree/3, normalize_beams/3, normalize_elf_runtime/3, wrap_dynamic_executables/2,
-         assert_contained_symlinks/1, assert_declared_elf_closure/2, assert_static_executables/1,
+         assert_contained_symlinks/1, assert_declared_elf_closure/2, assert_dynamic_symbols/2,
+         assert_static_executables/1,
          assert_wrapped_executables/1, prune_script_launchers/1,
          scrub_erts_build_metadata/1, scrub_erts_commandline_flags/1,
          assert_absent/2, assert_beams_absent/2]).
@@ -104,6 +105,15 @@ assert_declared_elf_closure(RuntimeRoot0, DeclaredRoots0) ->
         RuntimePaths
     )),
     validate_elf_queue(RuntimeElfs, Providers, #{}).
+
+assert_dynamic_symbols(Path, Required0) ->
+    {ok, Binary} = file:read_file(Path),
+    Required = lists:usort(Required0),
+    Available = dynamic_symbols(Binary),
+    case Required -- Available of
+        [] -> ok;
+        Missing -> erlang:error({missing_dynamic_symbols, Path, Missing})
+    end.
 
 assert_contained_symlinks(Root0) ->
     Root = normalize_path(Root0),
@@ -319,6 +329,62 @@ needed_libraries(<<16#7f, $E, $L, $F, 2, 1, _/binary>> = Binary) ->
         || Section <- Sections,
            maps:get(type, Section) =:= 6
     ])).
+
+dynamic_symbols(<<16#7f, $E, $L, $F, 2, 1, _/binary>> = Binary) ->
+    {_ProgramOffset, SectionOffset, _ProgramEntrySize, _ProgramCount,
+     SectionEntrySize, SectionCount} = elf_layout(Binary),
+    Sections = elf_sections(Binary, SectionOffset, SectionEntrySize, SectionCount),
+    lists:usort(lists:append([
+        symbols_from_dynamic_section(Binary, Section, Sections)
+        || Section <- Sections,
+           maps:get(type, Section) =:= 11
+    ]));
+dynamic_symbols(<<16#7f, $E, $L, $F, _/binary>>) ->
+    erlang:error(unsupported_elf_format);
+dynamic_symbols(_) ->
+    erlang:error(not_an_elf_file).
+
+symbols_from_dynamic_section(Binary, Symbols, Sections) ->
+    Link = maps:get(link, Symbols),
+    case Link < length(Sections) of
+        true -> ok;
+        false -> erlang:error({invalid_elf_string_table_index, Link})
+    end,
+    StringTable = lists:nth(Link + 1, Sections),
+    symbols_from_dynamic_entries(
+        Binary,
+        maps:get(offset, Symbols),
+        maps:get(size, Symbols),
+        maps:get(entry_size, Symbols),
+        maps:get(offset, StringTable),
+        []
+    ).
+
+symbols_from_dynamic_entries(_Binary, _Offset, _Remaining, 0, _StringsOffset, _Accumulator) ->
+    erlang:error(invalid_elf_symbol_entry_size);
+symbols_from_dynamic_entries(_Binary, _Offset, Remaining, EntrySize, _StringsOffset, Accumulator)
+        when Remaining < EntrySize ->
+    lists:reverse(Accumulator);
+symbols_from_dynamic_entries(Binary, Offset, Remaining, EntrySize, StringsOffset, Accumulator) ->
+    Entry = binary:part(Binary, Offset, EntrySize),
+    <<NameOffset:32/little-unsigned-integer,
+      _Info:8, _Other:8,
+      SectionIndex:16/little-unsigned-integer,
+      _Value:64/little-unsigned-integer,
+      _Size:64/little-unsigned-integer,
+      _/binary>> = Entry,
+    Updated = case NameOffset =/= 0 andalso SectionIndex =/= 0 of
+        true -> [read_c_string(Binary, StringsOffset + NameOffset) | Accumulator];
+        false -> Accumulator
+    end,
+    symbols_from_dynamic_entries(
+        Binary,
+        Offset + EntrySize,
+        Remaining - EntrySize,
+        EntrySize,
+        StringsOffset,
+        Updated
+    ).
 
 elf_sections(_Binary, _SectionOffset, _SectionEntrySize, 0) ->
     [];

@@ -132,6 +132,23 @@ declared_elf_closure_test() ->
     ok = file:write_file(Transitive, elf_library([])),
     ok = artifact_normalizer:assert_declared_elf_closure(Runtime, [Sdk]).
 
+dynamic_symbols_test() ->
+    Temporary = os:getenv("TEST_TMPDIR"),
+    Emulator = filename:join(Temporary, "beam.smp"),
+    ok = file:write_file(
+        Emulator,
+        elf_with_dynamic_symbols(["enif_alloc_resource", "enif_keep_resource"])
+    ),
+    ok = artifact_normalizer:assert_dynamic_symbols(
+        Emulator,
+        ["enif_alloc_resource", "enif_keep_resource"]
+    ),
+    ?assertException(
+        error,
+        {missing_dynamic_symbols, Emulator, ["enif_get_int"]},
+        artifact_normalizer:assert_dynamic_symbols(Emulator, ["enif_get_int"])
+    ).
+
 undeclared_transitive_elf_dependency_test() ->
     Temporary = os:getenv("TEST_TMPDIR"),
     Runtime = filename:join(Temporary, "missing_elf_runtime"),
@@ -271,6 +288,33 @@ elf_library(Dependencies) ->
     DynamicSection = elf_section_header(6, DynamicOffset, byte_size(DynamicEntries), 1, 16),
     <<Header/binary, NullSection/binary, StringSection/binary, DynamicSection/binary,
       Strings/binary, DynamicEntries/binary>>.
+
+elf_with_dynamic_symbols(Names) ->
+    Strings = iolist_to_binary([[0], lists:join(<<0>>, Names), [0]]),
+    {Offsets, _Next} = lists:mapfoldl(
+        fun(Name, Offset) -> {Offset, Offset + length(Name) + 1} end,
+        1,
+        Names
+    ),
+    SymbolEntries = iolist_to_binary([
+        <<0:192>>,
+        [
+            <<Offset:32/little, 16#12:8, 0:8, 1:16/little, 0:64/little, 0:64/little>>
+            || Offset <- Offsets
+        ]
+    ]),
+    SectionsOffset = 64,
+    StringsOffset = SectionsOffset + 3 * 64,
+    SymbolsOffset = StringsOffset + byte_size(Strings),
+    Header = <<16#7f, $E, $L, $F, 2, 1, 0:80,
+      2:16/little, 62:16/little, 1:32/little, 0:64/little,
+      0:64/little, SectionsOffset:64/little, 0:32/little, 64:16/little,
+      0:16/little, 0:16/little, 64:16/little, 3:16/little, 0:16/little>>,
+    NullSection = <<0:512>>,
+    StringSection = elf_section_header(3, StringsOffset, byte_size(Strings), 0, 0),
+    SymbolSection = elf_section_header(11, SymbolsOffset, byte_size(SymbolEntries), 1, 24),
+    <<Header/binary, NullSection/binary, StringSection/binary, SymbolSection/binary,
+      Strings/binary, SymbolEntries/binary>>.
 
 elf_section_header(Type, Offset, Size, Link, EntrySize) ->
     <<0:32/little, Type:32/little, 0:64/little, 0:64/little,

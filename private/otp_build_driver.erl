@@ -119,7 +119,20 @@ main([ConfigPath]) ->
     %% environment alone cannot carry the C/C++ toolchain's deterministic
     %% archive policy. A command-line assignment has Make's required priority.
     MakeArFlags = "ARFLAGS=" ++ maps:get("ARFLAGS", MakeEnvironment),
-    MakeVariables = [MakeShell, MakeDeterministic, MakeArFlags, MakePath, MakeTarget],
+    %% OTP's export-symbol configure probe temporarily discards LDFLAGS. A
+    %% hermetic linker needs the declared sysroot and driver selection retained
+    %% there, so the probe can report a false negative. Set OTP's dedicated
+    %% emulator-link variable to the upstream Linux value; dynamically loaded
+    %% NIFs resolve the public enif_* API from beam.smp through these exports.
+    MakeExport = "DEXPORT=-Wl,-export-dynamic",
+    MakeVariables = [
+        MakeShell,
+        MakeDeterministic,
+        MakeArFlags,
+        MakeExport,
+        MakePath,
+        MakeTarget
+    ],
     FinalMakeVariables = case CrossCompiling of
         true -> MakeVariables ++ ["BOOT_PREFIX="];
         false -> MakeVariables
@@ -220,6 +233,10 @@ main([ConfigPath]) ->
     InstalledErtsBin = filename:join([RuntimeRoot, "erts-" ++ ErtsVersion, "bin"]),
     InstalledErlExec = filename:join(InstalledErtsBin, "erlexec"),
     true = filelib:is_file(InstalledErlExec),
+    ok = artifact_normalizer:assert_dynamic_symbols(
+        filename:join(InstalledErtsBin, "beam.smp"),
+        ["enif_alloc_resource", "enif_keep_resource"]
+    ),
     case CrossCompiling of
         true -> ok;
         false ->

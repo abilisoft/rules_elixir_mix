@@ -51,6 +51,9 @@ Bazel Central Registry.
   nested bootstrap `erl`, `erlc`, and `escript` invocation.
 - Source toolchains require the explicit non-JIT profile for x86-64 musl,
   avoiding host-dependent signal-stack failures.
+- Source-built OTP emulators retain OTP's upstream dynamic-symbol export flag
+  under hermetic linkers and fail the build if representative NIF API symbols
+  are absent from the emulator's dynamic symbol table.
 - Hex, Rebar, OTP, Elixir, Bazel, and rule dependencies were refreshed to the
   versions documented by the repository.
 
