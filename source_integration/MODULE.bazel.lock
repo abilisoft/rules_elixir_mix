@@ -246,7 +246,7 @@
     "@@rules_fips+//fips:extensions.bzl%fips_sources": {
       "general": {
         "bzlTransitiveDigest": "bnsvf5bkeUVkhQd1vqbSGr7pORLqSB79ED8LFylt3EI=",
-        "usagesDigest": "LAgwrs1/JVQkr5ivoub9JQfCDa8neAQZ+VdkyI0rnIA=",
+        "usagesDigest": "B+xToDW4+mPerooJrxD1fW7Phi3juChkmIgVdPk3jAo=",
         "recordedInputs": [],
         "generatedRepoSpecs": {
           "openssl_core_src": {
