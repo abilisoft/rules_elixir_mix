@@ -215,6 +215,7 @@ elixir_release_test(
     required_paths = [
         ".rules_elixir_mix/crypto_activation.config",
         ".rules_elixir_mix/crypto_sdk/bin/crypto-activate",
+        ".rules_elixir_mix/crypto_sdk/lib/ossl-modules/fips.so",
         "bin/source_integration_app.rules_elixir_mix.crypto.json",
     ],
 )

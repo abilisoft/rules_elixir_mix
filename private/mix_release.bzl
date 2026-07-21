@@ -59,6 +59,9 @@ def _json_object(values):
 def _launch_template(value):
     return value.replace("{sysroot}", "{sdk_root}")
 
+def _runtime_entry_sort_key(entry):
+    return (len(entry.destination.split("/")), entry.destination)
+
 def _validate_release_name(value):
     allowed = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_@-"
     if not value or value[0] not in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_":
@@ -80,11 +83,17 @@ def _build_crypto_release_inputs(ctx, sdk, release_name, fips_required):
         fail("crypto SDK activation executable is not staged exactly at '{}'".format(tool_path))
 
     copy_manifest = ctx.actions.declare_file(ctx.label.name + "_crypto_runtime_manifest")
+
+    # Stage directory artifacts before explicitly mapped children. This lets a
+    # normalized SDK expose a declared runtime directory such as lib/ together
+    # with a more specific payload such as lib/ossl-modules/fips.so without the
+    # parent copy deleting the child later in the same deterministic action.
+    runtime_entries = sorted(sdk.runtime_entries, key = _runtime_entry_sort_key)
     ctx.actions.write(
         copy_manifest,
         "[{}].\n".format(", ".join([
             "{{{}, {}}}".format(_term_string(entry.file.path), _term_string(entry.destination))
-            for entry in sdk.runtime_entries
+            for entry in runtime_entries
         ])),
     )
     activation_config = ctx.actions.declare_file(ctx.label.name + "_crypto_activation.config")

@@ -24,6 +24,8 @@ Bazel Central Registry.
 - Automated pull requests for new stable OTP and Elixir source releases.
 - Direct projections of checksum-owned precompiled native files, including
   profile-selectable application NIFs.
+- Deterministic release staging for crypto SDKs whose declared runtime
+  directory and provider payload have nested destinations.
 
 ### Changed
 
