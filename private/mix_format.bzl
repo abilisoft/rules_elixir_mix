@@ -78,7 +78,8 @@ runfiles = System.fetch_env!("RUNFILES_DIR")
 project = Path.join(workspace, {project_root})
 state = Path.join(
   System.tmp_dir!(),
-  "rules_elixir_mix-{state_name}-format-#{{System.unique_integer([:positive, :monotonic])}}"
+  "rules_elixir_mix-" <> {state_name} <>
+    "-format-#{{System.unique_integer([:positive, :monotonic])}}"
 )
 File.rm_rf!(state)
 File.mkdir_p!(state)

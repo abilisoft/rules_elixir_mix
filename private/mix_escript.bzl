@@ -34,8 +34,7 @@ def _escript_program_path(otp, runfiles = False):
         getattr(otp, "runtime_wrapped", False) or
         getattr(otp, "exec_erts_bin", "")
     ) else "escript"
-    root = otp.erlang_home_short_path if runfiles else otp.erlang_home
-    return path_join(root, "bin", executable)
+    return path_join(execution_erts_bin(otp, runfiles = runfiles), executable)
 
 def _escript_program(ctx, otp, output):
     return _runfiles_artifact_path(
