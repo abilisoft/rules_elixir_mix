@@ -38,6 +38,9 @@ Bazel Central Registry.
   launcher lets recursive OTP helpers inherit a complete declared runtime
   environment without sidecar synthesis, host lookup, or widened `PATH`
   access.
+- Elixir source builds use the declared OTP execution overlay's single public
+  `erl` directly; they no longer add a duplicate private `erl` symlink to the
+  closed build `PATH`.
 
 ## 0.3.4 - 2026-07-22
 

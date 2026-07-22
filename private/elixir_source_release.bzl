@@ -120,7 +120,7 @@ def _elixir_source_release_impl(ctx):
         "#{\n" + ",\n".join([
             "  bash => {}".format(_erl_string(ctx.executable.bash.path)),
             "  environment => {}".format(environment_term),
-            "  erlexec => {}".format(_erl_string(path_join(otp_exec_erts_bin, "erlexec"))),
+            "  erl => {}".format(_erl_string(path_join(otp_exec_erts_bin, "erl"))),
             "  erl_aflags => {}".format(_erl_string(child_erl_aflags)),
             "  escript => {}".format(_erl_string(path_join(otp_exec_erts_bin, "escript"))),
             "  inherited_sdk_environment => {}".format(_term_list(inherited_sdk_environment)),
