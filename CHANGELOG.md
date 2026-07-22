@@ -19,6 +19,9 @@ Bazel Central Registry.
   inheriting the produced runtime ABI.
 - The source matrix covers an AMD64 GNU execution/bootstrap VM cross-building
   an Arm64 musl OTP runtime.
+- RustlerPrecompiled archive providers record their selected architecture, OS,
+  and ABI tuple; AMD64 and Arm64 source integration stages the matching
+  checksum-owned musl payload with action networking blocked.
 
 ### Fixed
 
@@ -30,17 +33,24 @@ Bazel Central Registry.
   `TARGET_VENDOR` from the Bazel target platform before selecting its locked
   archive.
 - `mix_format` remains source-only while staging declared dependency formatter
-  metadata for offline `.formatter.exs` `import_deps` evaluation.
+  metadata for offline `.formatter.exs` `import_deps` evaluation. All Mix,
+  Hex, dependency, and build scratch state lives in a cleaned temporary
+  directory outside the source checkout.
 - Provider-backed `mix_escript` outputs use a cwd-independent shell-free
   launcher with the complete OTP/SDK environment, payload, and adjacent
   runtime sidecar in `DefaultInfo.files` and runfiles.
-- Source-build integration consumes checksum-pinned `rules_fips` v0.3.6, whose
+- Source-build integration consumes checksum-pinned `rules_fips` v0.3.7, whose
   launcher lets recursive OTP helpers inherit a complete declared runtime
   environment without sidecar synthesis, host lookup, or widened `PATH`
-  access.
+  access, and whose normalized SDK also publishes a complete runnable OpenSSL
+  tool without shifting crypto ownership into these rules.
 - Elixir source builds use the declared OTP execution overlay's single public
   `erl` directly; they no longer add a duplicate private `erl` symlink to the
-  closed build `PATH`.
+  closed build `PATH`. The source driver now rejects zero or multiple declared
+  `erl` candidates before upstream compilation begins.
+- The cross-toolchain gate executes its AMD64 bootstrap smoke test under both
+  `linux-sandbox` and `processwrapper-sandbox` before the remote ARM64 musl
+  source build.
 - Source integration reuses each GNU glibc platform as both its native target
   and execution platform. `mix_escript` tools resolve the matching runtime
   without claiming the produced musl ABI, relying on platform ordering, or

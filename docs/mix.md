@@ -162,8 +162,10 @@ packages.mix_lock(
 
 The `//platforms:*` labels above are consumer-owned `config_setting` targets;
 use the runtime ABI constraints already present on the application's target
-platform. Each selected archive remains a declared, checksum-pinned input.
-The action copies only that archive to an action-local
+platform. The resulting provider records the selected architecture, OS, and
+ABI, and `mix_library` rejects it if that tuple differs from the selected OTP
+runtime. Each selected archive remains a declared, checksum-pinned input. The
+action copies only that archive to an action-local
 `RUSTLER_PRECOMPILED_GLOBAL_CACHE_PATH`. The compile action's blocked-network
 policy prevents a missing tuple from turning into an undeclared download.
 
@@ -316,10 +318,12 @@ mix_format(
 ```
 
 `bazel run //:format_sources` uses the selected hermetic OTP/Elixir toolchain,
-keeps Mix state below `.bazel/elixir_mix`, sets Hex offline, and writes only the
-declared workspace sources. The target has no `mix_library` edge and therefore
-cannot trigger application compilation. Like every writable checkout workflow,
-it is a local `bazel run` command rather than a remote/cacheable build action.
+keeps temporary Mix, Hex, dependency, and build state outside the source
+checkout, removes that state on completion, sets Hex offline, and writes only
+the declared workspace sources. The target has no `mix_library` edge and
+therefore cannot trigger application compilation. Like every writable checkout
+workflow, it is a local `bazel run` command rather than a remote/cacheable build
+action.
 
 Dependency maintenance is the one deliberately online local workflow. Declare
 it explicitly so network policy is visible in the BUILD graph:

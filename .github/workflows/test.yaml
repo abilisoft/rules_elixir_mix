@@ -178,6 +178,7 @@ jobs:
         working-directory: integration
         run: |
           # shellcheck disable=SC2086
+          bazel run ${BAZEL_REMOTE_FALLBACK} ${BAZEL_PLATFORM_FLAGS} --remote_header=x-buildbuddy-api-key="${BUILDBUDDY_ORG_API_KEY}" //:source_catalog_format_sources_write
           bazel run ${BAZEL_REMOTE_FALLBACK} ${BAZEL_PLATFORM_FLAGS} --remote_header=x-buildbuddy-api-key="${BUILDBUDDY_ORG_API_KEY}" //:source_catalog_format_sources
           # shellcheck disable=SC2086
           bazel run ${BAZEL_REMOTE_FALLBACK} ${BAZEL_PLATFORM_FLAGS} --remote_header=x-buildbuddy-api-key="${BUILDBUDDY_ORG_API_KEY}" //:local
@@ -311,6 +312,30 @@ jobs:
           bazelisk-cache: true
           disk-cache: true
           repository-cache: true
+      - name: Verify the AMD64 bootstrap under linux-sandbox
+        working-directory: source_integration
+        run: >-
+          bazel test
+          ${BAZEL_REMOTE_FALLBACK}
+          --platforms=//:source_target_glibc_x86_64
+          --extra_execution_platforms=//:source_target_glibc_x86_64
+          --modify_execution_info='^TestRunner$=+no-remote-exec'
+          --nocache_test_results
+          --remote_header=x-buildbuddy-api-key="${BUILDBUDDY_ORG_API_KEY}"
+          --strategy=TestRunner=linux-sandbox
+          @elixir_config//catalog_source_cross_arm64:bootstrap_smoke_test
+      - name: Verify the AMD64 bootstrap under processwrapper-sandbox
+        working-directory: source_integration
+        run: >-
+          bazel test
+          ${BAZEL_REMOTE_FALLBACK}
+          --platforms=//:source_target_glibc_x86_64
+          --extra_execution_platforms=//:source_target_glibc_x86_64
+          --modify_execution_info='^TestRunner$=+no-remote-exec'
+          --nocache_test_results
+          --remote_header=x-buildbuddy-api-key="${BUILDBUDDY_ORG_API_KEY}"
+          --strategy=TestRunner=processwrapper-sandbox
+          @elixir_config//catalog_source_cross_arm64:bootstrap_smoke_test
       - name: Build ARM64 OTP with the declared AMD64 bootstrap runtime
         if: ${{ env.BUILDBUDDY_ORG_API_KEY != '' }}
         working-directory: source_integration

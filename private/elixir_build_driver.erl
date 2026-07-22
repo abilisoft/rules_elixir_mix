@@ -39,6 +39,7 @@ main([ConfigPath, ExecutionRoot0]) ->
         "TMPDIR" => filename:join(Work, "tmp"),
         "TZ" => "UTC"
     },
+    ok = verify_unique_erl(BuildEnvironment, Erl),
     ok = ensure_directory(maps:get("HOME", BuildEnvironment)),
     ok = ensure_directory(maps:get("TMPDIR", BuildEnvironment)),
     Jobs = integer_to_list(maps:get(jobs, Config)),
@@ -158,6 +159,20 @@ inherit_declared_environment(Environment, Keys) ->
         Environment,
         Keys
     ).
+
+verify_unique_erl(Environment, Erl) ->
+    Path = maps:get("PATH", Environment),
+    Directories = string:split(Path, ":", all),
+    false = lists:member("", Directories),
+    ErlCandidates = [
+        filename:join(Directory, "erl")
+     || Directory <- Directories,
+        filelib:is_regular(filename:join(Directory, "erl"))
+    ],
+    case ErlCandidates of
+        [Erl] -> ok;
+        _ -> erlang:error({ambiguous_declared_erl, Erl, ErlCandidates})
+    end.
 
 stage_runtime(Source, Output) ->
     ok = ensure_directory(Output),

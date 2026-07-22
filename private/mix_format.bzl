@@ -76,7 +76,11 @@ def _mix_format_impl(ctx):
 workspace = System.fetch_env!("BUILD_WORKSPACE_DIRECTORY")
 runfiles = System.fetch_env!("RUNFILES_DIR")
 project = Path.join(workspace, {project_root})
-state = Path.join([workspace, ".bazel", "elixir_mix", {state_name}, "format"])
+state = Path.join(
+  System.tmp_dir!(),
+  "rules_elixir_mix-{state_name}-format-#{{System.unique_integer([:positive, :monotonic])}}"
+)
+File.rm_rf!(state)
 File.mkdir_p!(state)
 System.put_env("HEX_HOME", Path.join(state, "hex"))
 System.put_env("HOME", Path.join(state, "home"))
@@ -95,15 +99,19 @@ Enum.each(format_deps, fn {{app, formatter}} ->
   end
 end)
 File.cd!(project)
-Mix.start()
-Code.compile_file({mix_config})
-Mix.ProjectStack.merge_config(
-  deps: Enum.map(format_deps, fn {{app, _formatter}} ->
-    {{app, [path: Path.join(System.fetch_env!("MIX_DEPS_PATH"), Atom.to_string(app)), override: true]}}
-  end)
-)
-Mix.Task.run("loadconfig")
-Mix.Task.run("format", ["--no-compile" | System.argv()])
+try do
+  Mix.start()
+  Code.compile_file({mix_config})
+  Mix.ProjectStack.merge_config(
+    deps: Enum.map(format_deps, fn {{app, _formatter}} ->
+      {{app, [path: Path.join(System.fetch_env!("MIX_DEPS_PATH"), Atom.to_string(app)), override: true]}}
+    end)
+  )
+  Mix.Task.run("loadconfig")
+  Mix.Task.run("format", ["--no-compile" | System.argv()])
+after
+  File.rm_rf!(state)
+end
 """.format(
         formatter_dependencies = formatter_dependencies,
         mix_config = _elixir_string(ctx.file.mix_config.basename),

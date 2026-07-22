@@ -7,6 +7,7 @@ load(
     "mix_release",
     "mix_test",
     "otp_prebuilt_release",
+    "rustler_precompiled_archive",
 )
 load("@rules_elixir_mix//:integration/generated_asset.bzl", "escript_write")
 load(":rules_fips_sdk.bzl", "rules_fips_crypto_sdk")
@@ -154,6 +155,17 @@ filegroup(
     }),
 )
 
+rustler_precompiled_archive(
+    name = "rustler_precompiled_probe",
+    archive = ":lazy_html_nif",
+    archive_name = select({
+        ":target_glibc_arm64": "probe-aarch64-linux-gnu.tar.gz",
+        ":target_glibc_x86_64": "probe-x86_64-linux-gnu.tar.gz",
+        ":target_musl_arm64": "probe-aarch64-linux-musl.tar.gz",
+        ":target_musl_x86_64": "probe-x86_64-linux-musl.tar.gz",
+    }),
+)
+
 elixir_fips_runtime_test(
     name = "fips_runtime",
     tags = ["manual"],
@@ -167,6 +179,7 @@ mix_library(
     lockfile = "mix.lock",
     mix_config = "mix.exs",
     mix_env = "test",
+    rustler_precompiled_artifacts = [":rustler_precompiled_probe"],
     runtime_deps = [
         "@mix_deps//:bandit",
         "@mix_deps//:jason",

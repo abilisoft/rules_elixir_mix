@@ -17,6 +17,9 @@ The targets prove distinct boundaries:
   verifies packaged crypto activation, and boots without ambient crypto state.
 - `//:source_escript_codegen` builds the application as an offline escript in
   the execution configuration and runs it as a declared code-generation tool.
+- `//:test` also stages a checksum-owned RustlerPrecompiled probe selected from
+  the target architecture and libc ABI, then verifies the offline cache
+  contains only that tuple's payload.
 
 CI executes the runtime targets and escript tool natively on AMD64 and Arm64,
 then repeats them to require reusable Bazel cache entries. Each GNU glibc
@@ -27,3 +30,9 @@ the target and execution configurations remain intentionally distinct, and
 the produced musl tuple remains target-only. The bootstrap OTP archive is a
 declared, checksum-verified input; consumers should replace its CI-local URL
 with their own integrity-pinned artifact URL.
+
+The AMD64-to-Arm64 cross gate first runs the cross toolchain's declared AMD64
+bootstrap smoke target locally under both `linux-sandbox` and
+`processwrapper-sandbox`. It then performs the full ARM64 musl source build;
+recursive host-BEAM compilation remains bound to the GNU execution runtime and
+the ARM64 toolchain produces target artifacts only.

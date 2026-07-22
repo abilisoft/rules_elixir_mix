@@ -150,6 +150,19 @@ def _rustler_precompiled_analysis_check_impl(ctx):
             info.archive.basename,
             ctx.attr.expected_basename,
         ))
+    if (info.target_arch, info.target_os, info.target_abi) != (
+        ctx.attr.expected_target_arch,
+        ctx.attr.expected_target_os,
+        ctx.attr.expected_target_abi,
+    ):
+        fail("selected RustlerPrecompiled target {}/{}/{}, expected {}/{}/{}".format(
+            info.target_arch,
+            info.target_os,
+            info.target_abi,
+            ctx.attr.expected_target_arch,
+            ctx.attr.expected_target_os,
+            ctx.attr.expected_target_abi,
+        ))
     return []
 
 rustler_precompiled_analysis_check = rule(
@@ -157,6 +170,9 @@ rustler_precompiled_analysis_check = rule(
     attrs = {
         "archive": attr.label(mandatory = True, providers = [RustlerPrecompiledArchiveInfo]),
         "expected_basename": attr.string(mandatory = True),
+        "expected_target_abi": attr.string(mandatory = True),
+        "expected_target_arch": attr.string(mandatory = True),
+        "expected_target_os": attr.string(mandatory = True),
     },
 )
 

@@ -190,6 +190,14 @@ mix_format(
     deps = [":format_dependency_lib"],
 )
 
+mix_format(
+    name = "source_catalog_format_sources_write",
+    srcs = ["source_catalog_fixture/format_import_deps.exs"],
+    formatter_config = "source_catalog_fixture/.formatter.import_deps.exs",
+    mix_config = "source_catalog_fixture/mix.exs",
+    deps = [":format_dependency_lib"],
+)
+
 mix_library(
     name = "format_dependency_lib",
     srcs = [],

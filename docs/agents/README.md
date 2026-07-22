@@ -126,7 +126,9 @@ loads one.
 For RustlerPrecompiled, select one checksum-pinned archive with
 `rustler_precompiled_archive` in the target configuration and attach it through
 `rustler_precompiled_artifacts`; never let the Mix action download a missing
-platform archive.
+platform archive. The archive provider's architecture, OS, and ABI must match
+the selected OTP toolchain; do not pass an untyped file label around that
+analysis-time check.
 
 ### 5. Model one OTP application per target
 

@@ -524,6 +524,12 @@ rustler_precompiled_analysis_check(
         "@platforms//cpu:arm64": "analysis_fixture_test.exs",
         "@platforms//cpu:x86_64": "analysis_fixture.ex",
     }),
+    expected_target_abi = "gnu",
+    expected_target_arch = select({
+        "@platforms//cpu:arm64": "aarch64",
+        "@platforms//cpu:x86_64": "x86_64",
+    }),
+    expected_target_os = "linux",
 )
 
 mix_library(

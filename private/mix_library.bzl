@@ -66,17 +66,15 @@ def _precompiled_native_manifest(ctx):
 def _rustler_precompiled_manifest(ctx):
     entries = []
     destinations = {}
+    target_tuples = {}
     for target in ctx.attr.rustler_precompiled_artifacts:
-        if RustlerPrecompiledArchiveInfo in target:
-            info = target[RustlerPrecompiledArchiveInfo]
-            file = info.archive
-            destination = info.archive_name
-        else:
-            files = target[DefaultInfo].files.to_list()
-            if len(files) != 1 or files[0].is_directory:
-                fail("rustler_precompiled_artifacts entry {} must expose exactly one regular file".format(target.label))
-            file = files[0]
-            destination = file.basename
+        if RustlerPrecompiledArchiveInfo not in target:
+            fail("rustler_precompiled_artifacts entry {} must use rustler_precompiled_archive so its target tuple is declared".format(target.label))
+        info = target[RustlerPrecompiledArchiveInfo]
+        file = info.archive
+        destination = info.archive_name
+        target_tuple = (info.target_arch, info.target_os, info.target_abi)
+        target_tuples[target_tuple] = True
         if destination in destinations:
             fail("RustlerPrecompiled archives {} and {} share cache basename '{}'".format(
                 destinations[destination],
@@ -85,7 +83,10 @@ def _rustler_precompiled_manifest(ctx):
             ))
         destinations[destination] = file
         entries.append(struct(destination = destination, source = file))
-    return _write_mapping_manifest(ctx, "rustler_precompiled", entries), [entry.source for entry in entries]
+    if len(target_tuples) > 1:
+        fail("rustler_precompiled_artifacts contain archives for multiple target tuples: {}".format(sorted(target_tuples.keys())))
+    target_tuple = target_tuples.keys()[0] if target_tuples else None
+    return _write_mapping_manifest(ctx, "rustler_precompiled", entries), [entry.source for entry in entries], target_tuple
 
 def _header_destination(file):
     marker = "/include/"
@@ -186,7 +187,7 @@ def _mix_compile_impl(ctx):
     ]
     include_manifest = _write_mapping_manifest(ctx, "include", include_entries)
     precompiled_native_manifest = _precompiled_native_manifest(ctx)
-    rustler_precompiled_manifest, rustler_precompiled_files = _rustler_precompiled_manifest(ctx)
+    rustler_precompiled_manifest, rustler_precompiled_files, rustler_precompiled_target = _rustler_precompiled_manifest(ctx)
 
     internal_env = {
         "RULES_ELIXIR_MIX_APP": ctx.attr.app_name,
@@ -211,6 +212,11 @@ def _mix_compile_impl(ctx):
         target_os = getattr(otp, "target_os", "")
         if not target_abi or not target_arch or not target_os:
             fail("rustler_precompiled_artifacts require target ABI, architecture, and OS metadata from the OTP toolchain")
+        if rustler_precompiled_target != (target_arch, target_os, target_abi):
+            fail("RustlerPrecompiled archive target {} does not match OTP target {}".format(
+                rustler_precompiled_target,
+                (target_arch, target_os, target_abi),
+            ))
         internal_env.update({
             "RULES_ELIXIR_MIX_RUSTLER_PRECOMPILED_MANIFEST": rustler_precompiled_manifest.path,
             "RUSTLER_PRECOMPILED_GLOBAL_CACHE_PATH": build_root.path + ".rules_elixir_mix_state/rustler_precompiled",
