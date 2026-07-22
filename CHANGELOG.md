@@ -9,6 +9,16 @@ All notable user-facing changes are recorded here. Signed Git tags and GitHub
 releases identify the exact source; this project is not yet published to the
 Bazel Central Registry.
 
+## 0.3.2 - 2026-07-22
+
+### Changed
+
+- The source-build integration now consumes the checksum-pinned
+  `rules_fips` v0.3.2 SDK, including its stable target-native Rust/Cargo tool
+  paths across working-directory changes.
+- GitHub workflows now pin `actions/checkout` v7.0.1 and
+  `github/codeql-action` v4.37.2 by immutable commit.
+
 ## 0.3.1 - 2026-07-21
 
 ### Fixed
