@@ -68,6 +68,7 @@ jobs:
           //test:analysis_fixture
           //test:analysis_test_lib
           //test:common_test_analysis_fixture
+          //test:deps_update_analysis_fixture
           //test:ecto_analysis_fixture
           //test:elixir_ls_analysis_fixture
           //test:erlang_analysis_fixture

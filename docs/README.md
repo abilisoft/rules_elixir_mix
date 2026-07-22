@@ -10,7 +10,7 @@ checksum-pinned inputs, resolved toolchains, deterministic outputs, and small
 cacheable actions—while Mix remains responsible for Elixir semantics.
 
 > [!IMPORTANT]
-> [`v0.3.2`](https://github.com/abilisoft/rules_elixir_mix/releases/tag/v0.3.2)
+> [`v0.3.3`](https://github.com/abilisoft/rules_elixir_mix/releases/tag/v0.3.3)
 > is a signed GitHub release for direct commit pinning. It is not published to
 > the Bazel Central Registry, and this project has not published an official
 > runtime archive set. Bring checksum-pinned OTP and Elixir archives. CI proves

@@ -9,6 +9,24 @@ All notable user-facing changes are recorded here. Signed Git tags and GitHub
 releases identify the exact source; this project is not yet published to the
 Bazel Central Registry.
 
+## 0.3.3 - 2026-07-22
+
+### Changed
+
+- Protected CI now analyzes the public, explicitly online
+  `mix_deps_update` workflow on both supported architectures while keeping
+  build and test actions offline.
+- The Hex package extension now reports generated repositories as development
+  dependencies when its root usage is development-only, matching Bazel's
+  module-extension metadata contract.
+- The source-build integration now pins `rules_fips` v0.3.3, whose public Rust
+  adapter supplies its own transitive `rules_rust` module dependency.
+- The integration lock reflects the canonical metadata emitted by current
+  Hex for `ssl_verify_fun` without changing the package version or checksums.
+- Source-toolchain documentation now distinguishes a fully static musl VM
+  from the wrapped-dynamic musl profile required by OpenSSL FIPS providers
+  and applications that load NIFs.
+
 ## 0.3.2 - 2026-07-22
 
 ### Changed
