@@ -1,6 +1,6 @@
 """Shell-free Rebar3 compilation for Erlang Hex applications."""
 
-load("//private:beam_info.bzl", "ErlangAppInfo", "compile_depset", "erl_env_flags", "execution_erlexec", "execution_erts_bin", "fips_erl_args", "flat_compile_deps", "otp_runtime_env", "otp_runtime_erl_args", "path_join", "prepare_crypto_runtime", "runtime_depset", "type_depset")
+load("//private:beam_info.bzl", "ErlangAppInfo", "compile_depset", "erl_env_flags", "execution_erlexec", "execution_erts_bin", "flat_compile_deps", "otp_runtime_env", "otp_runtime_erl_args", "path_join", "runtime_depset", "type_depset")
 load("//private:hex_package_info.bzl", "HEX_PACKAGE_ATTRS", "hex_package_info")
 
 _RebarCompileInfo = provider(
@@ -229,12 +229,10 @@ def _rebar_compile_impl(ctx):
     fingerprint = ctx.actions.declare_file(ctx.label.name + "_fingerprint")
     project_fingerprint = ctx.actions.declare_file(ctx.label.name + "_project_fingerprint")
     toolchain = _toolchain(ctx)
-    activation = prepare_crypto_runtime(ctx, toolchain.otpinfo, ctx.label.name + "_crypto_state")
     args = ctx.actions.args()
     args.add_all([
         "-noshell",
         "+fnu",
-    ] + fips_erl_args(toolchain.otpinfo, activate = False) + [
         "-s",
         "elixir",
         "start_cli",
@@ -247,7 +245,6 @@ def _rebar_compile_impl(ctx):
     inputs = ctx.files.srcs + ctx.files.priv + ctx.files.include + [ctx.file.rebar_config, ctx.file.rebar3]
     project_manifest = _project_manifest(ctx, ctx.files.srcs + ctx.files.priv + ctx.files.include + [ctx.file.rebar_config])
     environment = otp_runtime_env(toolchain.otpinfo)
-    environment.update(activation.environment)
     environment.update({
         "ERL_COMPILER_OPTIONS": "deterministic",
         "ERL_LIBS": ":".join(
@@ -272,8 +269,7 @@ def _rebar_compile_impl(ctx):
         "RULES_ELIXIR_MIX_ESCRIPT": path_join(execution_erts_bin(toolchain.otpinfo), "escript"),
         "RULES_ELIXIR_MIX_REBAR_ERL_AFLAGS": erl_env_flags(
             otp_runtime_erl_args(toolchain.otpinfo) +
-            ["+fnu"] +
-            (["-crypto", "fips_mode", "true"] if toolchain.otpinfo.fips == "required" else []),
+            ["+fnu"],
         ),
         "RULES_ELIXIR_MIX_REBAR3": ctx.file.rebar3.path,
         "RULES_ELIXIR_MIX_REBAR_CONFIG": ctx.file.rebar_config.path,
@@ -285,7 +281,7 @@ def _rebar_compile_impl(ctx):
         arguments = [args],
         inputs = depset(
             direct = inputs + [project_manifest],
-            transitive = [toolchain.runtime_files, activation.files] + [
+            transitive = [toolchain.runtime_files] + [
                 dep[DefaultInfo].files
                 for dep in deps
             ],

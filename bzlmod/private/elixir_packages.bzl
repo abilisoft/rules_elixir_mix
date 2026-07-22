@@ -70,6 +70,7 @@ mix_library(
                 "native_build": dep.native_build,
                 "precompiled_native_artifacts": [str(label) for label in dep.precompiled_native_artifacts],
                 "precompiled_native_files": [str(label) for label in dep.precompiled_native_files],
+                "rustler_precompiled_artifacts": [str(label) for label in dep.rustler_precompiled_artifacts],
                 "module": mod,
                 "repository_name": dep.repository_name,
                 "repository_url": dep.repository_url,
@@ -111,6 +112,7 @@ mix_library(
             native_build = pkg["native_build"],
             precompiled_native_artifacts = pkg["precompiled_native_artifacts"],
             precompiled_native_files = pkg["precompiled_native_files"],
+            rustler_precompiled_artifacts = pkg["rustler_precompiled_artifacts"],
             repository_name = pkg["repository_name"],
             repository_url = pkg["repository_url"],
         )
@@ -146,11 +148,13 @@ mix_library(
                 native_artifacts = [str(native_artifact)] if native_artifact else []
                 native_file = lock.precompiled_native_files.get(spec.package)
                 native_files = [str(native_file)] if native_file else []
-                native_build = spec.package in lock.native_build_packages and not native_artifacts and not native_files
-                if (native_artifacts or native_files) and spec.manager != "mix":
+                rustler_artifact = lock.rustler_precompiled_artifacts.get(spec.package)
+                rustler_artifacts = [str(rustler_artifact)] if rustler_artifact else []
+                native_build = spec.package in lock.native_build_packages and not native_artifacts and not native_files and not rustler_artifacts
+                if (native_artifacts or native_files or rustler_artifacts) and spec.manager != "mix":
                     fail("precompiled native inputs are only supported for Mix package '{}'".format(spec.package))
-                if native_artifacts and native_files:
-                    fail("package '{}' cannot use both precompiled_native_artifacts and precompiled_native_files".format(spec.package))
+                if len([value for value in [native_artifacts, native_files, rustler_artifacts] if value]) > 1:
+                    fail("package '{}' must select exactly one precompiled native cache/file mechanism".format(spec.package))
                 identity = repr([
                     spec.app_name,
                     spec.package,
@@ -161,6 +165,7 @@ mix_library(
                     runtime_deps,
                     native_artifacts,
                     native_files,
+                    rustler_artifacts,
                     native_build,
                     spec.repository,
                     repository_urls.get(spec.repository),
@@ -195,6 +200,7 @@ mix_library(
                             native_build = native_build,
                             precompiled_native_artifacts_str = format_deps_str(native_artifacts),
                             precompiled_native_files_str = format_deps_str(native_files),
+                            rustler_precompiled_artifacts_str = format_deps_str(rustler_artifacts),
                             repository = spec.repository,
                             sha256 = spec.sha256,
                             version = spec.version,
@@ -264,6 +270,7 @@ def _same_hex_package(a, b):
         a["native_build"] == b["native_build"] and
         a["precompiled_native_artifacts"] == b["precompiled_native_artifacts"] and
         a["precompiled_native_files"] == b["precompiled_native_files"] and
+        a["rustler_precompiled_artifacts"] == b["rustler_precompiled_artifacts"] and
         a["repository_name"] == b["repository_name"] and
         a["repository_url"] == b["repository_url"]
     )
@@ -281,6 +288,7 @@ elixir_packages = module_extension(
             }),
             "precompiled_native_artifacts": attr.string_keyed_label_dict(allow_files = True),
             "precompiled_native_files": attr.string_keyed_label_dict(allow_files = True),
+            "rustler_precompiled_artifacts": attr.string_keyed_label_dict(allow_files = True),
             "native_build_packages": attr.string_list(),
         }),
     },

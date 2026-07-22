@@ -168,6 +168,11 @@ verifies the shared OTP behavior and ELF linkage; provider identity,
 certificate/version metadata, and service indicators remain tests of the SDK
 producer.
 
+Archive verification and `elixir_fips_runtime_test` explicitly activate FIPS.
+Selecting the same validated toolchain for application compilation does not:
+capability is a toolchain property, while activation belongs to runtime and
+release validation.
+
 The optional Bash/Make/Perl/POSIX labels are not used by ordinary BEAM
 packages. They become inputs only for `mix_library(native_build = True)` or a
 Hex package named in `mix_lock(native_build_packages = [...])`. The native

@@ -1,6 +1,6 @@
 """Create deterministic, relocatable archives from source-built runtimes."""
 
-load("//private:beam_info.bzl", "OtpInfo", "execution_erlexec", "fips_erl_args", "otp_runtime_env", "prepare_crypto_runtime")
+load("//private:beam_info.bzl", "OtpInfo", "execution_erlexec", "otp_runtime_env")
 load("//private:runtime_archive_info.bzl", "BeamRuntimeArchiveInfo", "BeamRuntimeSourceInfo")
 
 _DRIVER_EVAL = "A=init:get_plain_arguments(),[N,D|R]=A,{ok,artifact_normalizer,NB}=compile:file(N,[binary,report_errors,report_warnings]),{module,artifact_normalizer}=code:load_binary(artifact_normalizer,N,NB),{ok,runtime_archive_driver,B}=compile:file(D,[binary,report_errors,report_warnings]),{module,runtime_archive_driver}=code:load_binary(runtime_archive_driver,D,B),runtime_archive_driver:main(R),halt()."
@@ -28,7 +28,6 @@ def _beam_runtime_archive_impl(ctx):
     sha256 = ctx.outputs.sha256
     metadata = ctx.outputs.metadata
     state = ctx.actions.declare_directory(ctx.label.name + "_state")
-    activation = prepare_crypto_runtime(ctx, otp, ctx.label.name + "_crypto_state")
     root = source.root.path
     if source.root_relative_path:
         root += "/" + source.root_relative_path
@@ -37,7 +36,6 @@ def _beam_runtime_archive_impl(ctx):
     args.add_all([
         "-noshell",
         "+fnu",
-    ] + fips_erl_args(otp, activate = False) + [
         "-eval",
         _DRIVER_EVAL,
         "-extra",
@@ -54,7 +52,6 @@ def _beam_runtime_archive_impl(ctx):
         metadata,
     ])
     environment = otp_runtime_env(otp)
-    environment.update(activation.environment)
     environment.update({
         "HOME": state.path + "/home",
         "LANG": "C",
@@ -67,7 +64,7 @@ def _beam_runtime_archive_impl(ctx):
         arguments = [args],
         inputs = depset(
             direct = [source.root, otp.crypto_sdk.sysroot, ctx.file._driver, ctx.file._normalizer],
-            transitive = [otp.runtime_files, activation.files],
+            transitive = [otp.runtime_files],
         ),
         outputs = [archive, sha256, metadata, state],
         env = environment,

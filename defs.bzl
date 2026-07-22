@@ -19,6 +19,7 @@ load("//private:fips_runtime_test.bzl", _elixir_fips_runtime_test = "elixir_fips
 load("//private:hex_package_assets.bzl", _HexPackageAssetsInfo = "HexPackageAssetsInfo", _hex_package_assets = "hex_package_assets")
 load("//private:hex_package_info.bzl", _HexPackageInfo = "HexPackageInfo")
 load("//private:mix_escript.bzl", _MixEscriptInfo = "MixEscriptInfo", _mix_escript = "mix_escript")
+load("//private:mix_format.bzl", _mix_format = "mix_format")
 load("//private:mix_library.bzl", _mix_library = "mix_library")
 load("//private:mix_local.bzl", _mix_local = "mix_local")
 load("//private:mix_phx_assets.bzl", _mix_phx_assets = "mix_phx_assets")
@@ -35,6 +36,7 @@ load("//private:rebar_library.bzl", _rebar_library = "rebar_library")
 load("//private:release_runtime_test.bzl", _elixir_release_test = "elixir_release_test")
 load("//private:runtime_archive.bzl", _beam_runtime_archive = "beam_runtime_archive")
 load("//private:runtime_archive_info.bzl", _BeamRuntimeArchiveInfo = "BeamRuntimeArchiveInfo")
+load("//private:rustler_precompiled.bzl", _RustlerPrecompiledArchiveInfo = "RustlerPrecompiledArchiveInfo", _rustler_precompiled_archive = "rustler_precompiled_archive")
 
 ErlangAppInfo = _ErlangAppInfo
 OtpInfo = _OtpInfo
@@ -48,6 +50,7 @@ BeamRuntimeArchiveInfo = _BeamRuntimeArchiveInfo
 HexPackageAssetsInfo = _HexPackageAssetsInfo
 HexPackageInfo = _HexPackageInfo
 MixEscriptInfo = _MixEscriptInfo
+RustlerPrecompiledArchiveInfo = _RustlerPrecompiledArchiveInfo
 beam_runtime_archive = _beam_runtime_archive
 otp_prebuilt_release = _otp_prebuilt_release
 otp_runtime_rejection_test = _otp_runtime_rejection_test
@@ -57,6 +60,8 @@ otp_source_release = _otp_source_release
 otp_toolchain = _otp_toolchain
 hex_package_assets = _hex_package_assets
 mix_escript = _mix_escript
+mix_format = _mix_format
+rustler_precompiled_archive = _rustler_precompiled_archive
 elixir_prebuilt_release = _elixir_prebuilt_release
 elixir_source_release = _elixir_source_release
 elixir_generated_source = _elixir_generated_source

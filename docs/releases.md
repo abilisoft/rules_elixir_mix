@@ -75,6 +75,10 @@ For a FIPS-required toolchain, `mix_release` merges
 `{crypto, [{fips_mode, true}]}` into generated `sys.config`. A fully static
 crypto SDK needs no provider payload.
 
+The application compilation action remains non-FIPS. Release assembly adds the
+persistent runtime policy, and `elixir_release_test` validates the packaged
+runtime rather than relying on the build VM's state.
+
 A normalized provider-backed SDK is packaged below
 `.rules_elixir_mix/crypto_sdk`. The rule prepends a checked-in Elixir activation
 hook to the declared `config/runtime.exs`; the release then:

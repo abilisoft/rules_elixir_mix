@@ -7,6 +7,7 @@ load("//private:hex_package_info.bzl", "HEX_PACKAGE_ATTRS", "hex_package_info")
 load("//private:mix_execution.bzl", "run_mix_action")
 load("//private:mix_info.bzl", "MixProjectInfo")
 load("//private:native_build.bzl", "NATIVE_EXEC_GROUP", "native_build_context", "use_native_cc_toolchain")
+load("//private:rustler_precompiled.bzl", "RustlerPrecompiledArchiveInfo")
 
 _MixCompileInfo = provider(
     doc = "Internal result of a Mix compile action.",
@@ -61,6 +62,30 @@ def _precompiled_native_manifest(ctx):
         basenames[file.basename] = file
         entries.append(struct(destination = file.basename, source = file))
     return _write_mapping_manifest(ctx, "precompiled_native", entries)
+
+def _rustler_precompiled_manifest(ctx):
+    entries = []
+    destinations = {}
+    for target in ctx.attr.rustler_precompiled_artifacts:
+        if RustlerPrecompiledArchiveInfo in target:
+            info = target[RustlerPrecompiledArchiveInfo]
+            file = info.archive
+            destination = info.archive_name
+        else:
+            files = target[DefaultInfo].files.to_list()
+            if len(files) != 1 or files[0].is_directory:
+                fail("rustler_precompiled_artifacts entry {} must expose exactly one regular file".format(target.label))
+            file = files[0]
+            destination = file.basename
+        if destination in destinations:
+            fail("RustlerPrecompiled archives {} and {} share cache basename '{}'".format(
+                destinations[destination],
+                file,
+                destination,
+            ))
+        destinations[destination] = file
+        entries.append(struct(destination = destination, source = file))
+    return _write_mapping_manifest(ctx, "rustler_precompiled", entries), [entry.source for entry in entries]
 
 def _header_destination(file):
     marker = "/include/"
@@ -161,6 +186,7 @@ def _mix_compile_impl(ctx):
     ]
     include_manifest = _write_mapping_manifest(ctx, "include", include_entries)
     precompiled_native_manifest = _precompiled_native_manifest(ctx)
+    rustler_precompiled_manifest, rustler_precompiled_files = _rustler_precompiled_manifest(ctx)
 
     internal_env = {
         "RULES_ELIXIR_MIX_APP": ctx.attr.app_name,
@@ -178,6 +204,11 @@ def _mix_compile_impl(ctx):
         internal_env["RULES_ELIXIR_MIX_INCLUDE_MANIFEST"] = include_manifest.path
     if precompiled_native_manifest:
         internal_env["RULES_ELIXIR_MIX_PRECOMPILED_NATIVE_MANIFEST"] = precompiled_native_manifest.path
+    if rustler_precompiled_manifest:
+        internal_env.update({
+            "RULES_ELIXIR_MIX_RUSTLER_PRECOMPILED_MANIFEST": rustler_precompiled_manifest.path,
+            "RUSTLER_PRECOMPILED_GLOBAL_CACHE_PATH": build_root.path + ".rules_elixir_mix_state/rustler_precompiled",
+        })
 
     if ctx.attr.native_build and (ctx.attr.native_make_jobs < 1 or ctx.attr.native_make_jobs > 64):
         fail("native_make_jobs must be between 1 and 64")
@@ -193,7 +224,7 @@ def _mix_compile_impl(ctx):
         mix_env = ctx.attr.mix_env,
         build_root = build_root.path,
         deps = flat_compile_deps(ctx.attr.compile_deps + ctx.attr.type_deps + ctx.attr.runtime_deps),
-        inputs = source_files + generated_files + ctx.files.include + ctx.files.precompiled_native_artifacts + [entry.source for entry in priv_entries] + project_files + [ctx.file._artifact_normalizer] + ([priv_manifest] if priv_manifest else []) + ([include_manifest] if include_manifest else []) + ([precompiled_native_manifest] if precompiled_native_manifest else []),
+        inputs = source_files + generated_files + ctx.files.include + ctx.files.precompiled_native_artifacts + rustler_precompiled_files + [entry.source for entry in priv_entries] + project_files + [ctx.file._artifact_normalizer] + ([priv_manifest] if priv_manifest else []) + ([include_manifest] if include_manifest else []) + ([precompiled_native_manifest] if precompiled_native_manifest else []) + ([rustler_precompiled_manifest] if rustler_precompiled_manifest else []),
         project_inputs = source_files + generated_files + ctx.files.include + [entry.source for entry in priv_entries] + project_files,
         project_entries = generated_entries + priv_project_entries,
         outputs = [build_root, fingerprint, project_fingerprint],
@@ -240,6 +271,7 @@ def _mix_compile_attrs():
         "native_linkopts": attr.string_list(),
         "native_make_jobs": attr.int(default = 4),
         "precompiled_native_artifacts": attr.label_list(allow_files = True),
+        "rustler_precompiled_artifacts": attr.label_list(allow_files = True),
         "warnings_as_errors": attr.bool(default = True),
         "_artifact_normalizer": attr.label(
             default = Label("//private:artifact_normalizer.erl"),
@@ -379,6 +411,7 @@ def _mix_library_impl(name, visibility, **kwargs):
         "native_linkopts",
         "native_make_jobs",
         "precompiled_native_artifacts",
+        "rustler_precompiled_artifacts",
         "warnings_as_errors",
     ]
     info_keys = ["mix_env", "srcs", "config", "data", "generated_srcs", "include"] + HEX_PACKAGE_ATTRS.keys()

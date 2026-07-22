@@ -147,6 +147,21 @@ case System.get_env("RULES_ELIXIR_MIX_PRECOMPILED_NATIVE_MANIFEST") do
       make_writable.(make_writable, destination)
     end)
 end
+case System.get_env("RULES_ELIXIR_MIX_RUSTLER_PRECOMPILED_MANIFEST") do
+  nil -> :ok
+  manifest ->
+    cache = Path.expand(System.fetch_env!("RUSTLER_PRECOMPILED_GLOBAL_CACHE_PATH"), execution_root)
+    System.put_env("RUSTLER_PRECOMPILED_GLOBAL_CACHE_PATH", cache)
+    File.rm_rf!(cache)
+    File.mkdir_p!(cache)
+    {:ok, [entries]} = :file.consult(String.to_charlist(manifest))
+    Enum.each(entries, fn {source, basename} ->
+      source = absolute_input.(source)
+      destination = Path.join(cache, to_string(basename))
+      File.cp!(source, destination)
+      make_writable.(make_writable, destination)
+    end)
+end
 # erlexec records ERL_ROOTDIR before this driver can replace the relocatable
 # /proc/self/cwd marker with an absolute path. Keep that recorded VM root valid
 # after entering the staged project by installing one action-local symlink at
@@ -776,7 +791,7 @@ def validate_user_env(user_env):
     Args:
       user_env: Caller-supplied environment dictionary.
     """
-    reserved_prefixes = ["DYLD_", "ELIXIR_MAKE_", "ERL_", "HEX_", "MIX_", "OPENSSL_", "RULES_ELIXIR_MIX_"]
+    reserved_prefixes = ["DYLD_", "ELIXIR_MAKE_", "ERL_", "HEX_", "MIX_", "OPENSSL_", "RULES_ELIXIR_MIX_", "RUSTLER_PRECOMPILED_"]
     reserved = ["BASH_ENV", "BINDIR", "EMU", "FIPS_MODULE_CONF", "HOME", "LANG", "LC_ALL", "LD_LIBRARY_PATH", "LD_PRELOAD", "PATH", "PROGNAME", "ROOTDIR", "SHELL", "SOURCE_DATE_EPOCH", "TEMP", "TMP", "TMPDIR", "TZ"]
     for key in user_env:
         if key in reserved or any([key.startswith(prefix) for prefix in reserved_prefixes]):
@@ -825,9 +840,6 @@ def mix_action_env(ctx, mix_env, build_root, deps, internal_extra = {}, user_ext
         "TMPDIR": path_join(work_root, "tmp"),
         "TZ": "UTC",
     })
-    if toolchain.otpinfo.fips == "required":
-        env["ERL_AFLAGS"] = erl_env_flags(otp_runtime_erl_args(toolchain.otpinfo) + ["-crypto", "fips_mode", "true"])
-        env["RULES_ELIXIR_MIX_FIPS_REQUIRED"] = "true"
     env.update(user_extra)
     env.update(internal_extra)
     return env
@@ -876,11 +888,6 @@ def run_mix_action(
       mnemonic: Bazel action mnemonic.
     """
     toolchain = _toolchain(ctx, exec_group)
-    activation = prepare_crypto_runtime(
-        ctx,
-        toolchain.otpinfo,
-        ctx.label.name + "_" + mnemonic.lower() + "_crypto_state",
-    )
     project_manifest = _project_manifest(ctx, mix_config, project_inputs, project_entries = project_entries)
     dependency_manifest, dependency_inputs = _dependency_manifest(ctx, deps)
     build_cache_manifest = _build_cache_manifest(ctx, flat_deps(deps)) if stage_build_cache else None
@@ -896,7 +903,6 @@ def run_mix_action(
             "RULES_ELIXIR_MIX_REMOVE_STAGED_DEPS": "true",
         })
     env = mix_action_env(ctx, mix_env, build_root, deps, internal, user_env, toolchain)
-    env.update(activation.environment)
     env.update({
         "RULES_ELIXIR_MIX_EXS": mix_config.basename,
         "RULES_ELIXIR_MIX_PROJECT_DIR": path_join(state_dir, "project"),
@@ -907,7 +913,6 @@ def run_mix_action(
     args.add_all([
         "-noshell",
         "+fnu",
-    ] + fips_erl_args(toolchain.otpinfo, activate = False) + [
         "-s",
         "elixir",
         "start_cli",
@@ -919,7 +924,7 @@ def run_mix_action(
     ])
     args.add_all(task_args)
 
-    transitive_inputs = [toolchain.runtime_files, activation.files] + [
+    transitive_inputs = [toolchain.runtime_files] + [
         dep[DefaultInfo].files
         for dep in flat_deps(deps)
     ]
@@ -1055,11 +1060,16 @@ def mix_test_result(ctx, task, task_args, srcs, data, tools):
       DefaultInfo and RunEnvironmentInfo for the test executable.
     """
     toolchain = _toolchain(ctx)
+
+    # Compilation and static analysis consume the capable toolchain without
+    # changing crypto policy. Only known runtime-test tasks activate FIPS.
+    activate_fips = toolchain.otpinfo.fips == "required" and task in ["coveralls.lcov", "test"]
     activation = prepare_crypto_runtime(
         ctx,
         toolchain.otpinfo,
         ctx.label.name + "_crypto_state",
         runfiles = True,
+        activate = activate_fips,
     )
     lib_info = ctx.attr.lib[ErlangAppInfo]
     mix_info = ctx.attr.lib[MixProjectInfo]
@@ -1087,7 +1097,7 @@ def mix_test_result(ctx, task, task_args, srcs, data, tools):
     erl_args = otp_runtime_erl_args(toolchain.otpinfo, runfiles = True) + [
         "-noshell",
         "+fnu",
-    ] + fips_erl_args(toolchain.otpinfo, runfiles = True, activate = False) + [
+    ] + fips_erl_args(toolchain.otpinfo, activate = activate_fips) + [
         "-eval",
         _stage_expression(),
     ] + postgres_args + [
@@ -1099,7 +1109,10 @@ def mix_test_result(ctx, task, task_args, srcs, data, tools):
         _MIX_EVAL,
         "--",
     ] + args
-    child_erl_aflags = erl_env_flags(otp_runtime_erl_args(toolchain.otpinfo, runfiles = True) + (["-crypto", "fips_mode", "true"] if toolchain.otpinfo.fips == "required" else []))
+    child_erl_aflags = erl_env_flags(
+        otp_runtime_erl_args(toolchain.otpinfo, runfiles = True) +
+        fips_erl_args(toolchain.otpinfo, activate = activate_fips),
+    )
 
     erl_lib_targets = dependency_targets if task == "compile" else app_targets
     erl_libs = [path_join(toolchain.elixirinfo.elixir_home_short_path, "lib")]
@@ -1128,7 +1141,7 @@ def mix_test_result(ctx, task, task_args, srcs, data, tools):
         "SOURCE_DATE_EPOCH": "946684800",
         "TZ": "UTC",
     })
-    if toolchain.otpinfo.fips == "required":
+    if activate_fips:
         environment["RULES_ELIXIR_MIX_FIPS_REQUIRED"] = "true"
     if task == "test":
         environment["RULES_ELIXIR_MIX_SHARD_TESTS"] = "true"

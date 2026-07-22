@@ -14,7 +14,7 @@ Hermetic, Mix-first Bazel rules for Elixir and Erlang/OTP applications,
 including Phoenix, LiveView, ExUnit, analysis, and releases.
 
 > [!IMPORTANT]
-> [`v0.3.3`](https://github.com/abilisoft/rules_elixir_mix/releases/tag/v0.3.3)
+> [`v0.3.4`](https://github.com/abilisoft/rules_elixir_mix/releases/tag/v0.3.4)
 > is available as a signed GitHub release but is intentionally not published to
 > the Bazel Central Registry yet. Pin its verified commit directly as shown in
 > [Getting started](docs/getting_started.md#1-pin-the-ruleset). Source builds
@@ -61,11 +61,11 @@ toolchains.
 | Locked dependencies | Bzlmod import from `mix.lock`, including Mix and Rebar packages |
 | Locked package interoperability | Public package-relative asset projections and executable Mix escripts |
 | Dependency semantics | Separate compile, type, and runtime edges |
-| Generated/runtime content | Generated source mappings, `priv`, NIFs, protocol consolidation |
+| Generated/runtime content | Generated source mappings, `priv`, NIFs, target-selected RustlerPrecompiled archives, protocol consolidation |
 | Tests | ExUnit sharding, EUnit, Common Test, Ecto/Postgres, Wallaby |
 | Analysis | format, Elixir 1.20+ type analysis, Dialyzer PLTs, Credo, Sobelow, Xref, coverage |
 | Phoenix | digestible assets, releases, local server/code-reload workflows |
-| Developer workflows | IEx, generators, Phoenix server, and ElixirLS over the same graph |
+| Developer workflows | Source-only formatting, IEx, generators, Phoenix server, and ElixirLS over the same graph |
 | OTP and Elixir | Checksum-pinned prebuilt archives or pristine source builds |
 | Crypto/FIPS | Backend-neutral consumption of a producer-owned crypto SDK |
 
@@ -167,8 +167,8 @@ and CSS compilation belongs to the corresponding Bazel ecosystem rules;
 `mix_phx_assets` handles cacheable `phx.digest` output.
 
 Native and crypto artifacts come from declared producers. This repository can
-consume a normalized crypto SDK while building pristine OTP, propagate
-FIPS-required runtime activation, and test the shared OTP behavior. It does not
+consume a normalized crypto SDK while building pristine OTP, compile without
+activating FIPS, and activate FIPS for runtime/release validation. It does not
 fetch, patch, certify, or silently choose a crypto backend. See the
 [backend-neutral crypto SDK contract](docs/source_toolchains.md#backend-neutral-crypto-sdk).
 

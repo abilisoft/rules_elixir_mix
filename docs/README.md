@@ -10,7 +10,7 @@ checksum-pinned inputs, resolved toolchains, deterministic outputs, and small
 cacheable actions—while Mix remains responsible for Elixir semantics.
 
 > [!IMPORTANT]
-> [`v0.3.3`](https://github.com/abilisoft/rules_elixir_mix/releases/tag/v0.3.3)
+> [`v0.3.4`](https://github.com/abilisoft/rules_elixir_mix/releases/tag/v0.3.4)
 > is a signed GitHub release for direct commit pinning. It is not published to
 > the Bazel Central Registry, and this project has not published an official
 > runtime archive set. Bring checksum-pinned OTP and Elixir archives. CI proves
@@ -68,9 +68,10 @@ the other.
 | Compile/type/runtime dependency separation | Analysis and Dialyzer tested |
 | ExUnit sharding, EUnit, Common Test | Integration tested |
 | Phoenix, LiveView, assets, releases | Integration tested |
-| Format, Credo, Dialyzer, Sobelow, Xref, type analysis | Integration tested |
+| Format checks and source-only writable formatting | Integration tested |
+| Credo, Dialyzer, Sobelow, Xref, type analysis | Integration tested |
 | Ecto/Postgres and Wallaby declared runtimes | Analysis tested; real service/browser matrix not yet in CI |
-| Rustler/NIF artifact mapping | Analysis tested |
+| Rustler/NIF artifact mapping and target-selected RustlerPrecompiled staging | Integration tested |
 | `mix_local` warm-cache workflow | Integration tested |
 | Phoenix server and ElixirLS local entry points | Analysis tested |
 | Static and provider-backed generic FIPS contracts | A downstream Phoenix/LiveView app builds, tests, releases, and boots on AMD64 and ARM64 against the normalized `rules_fips` SDK |

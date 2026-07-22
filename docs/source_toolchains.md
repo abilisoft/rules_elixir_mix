@@ -317,11 +317,14 @@ owns these upstream configure flags:
 --enable-static-nifs
 ```
 
-It then starts the installed, declared BEAM with `-crypto fips_mode true` and
-fails unless FIPS is enabled, the crypto NIF is static, an approved operation
-succeeds, and a prohibited operation fails. The same early BEAM argument and
-normalized activation apply to Mix, Rebar, protocol consolidation, Dialyzer,
-tests, and local workflows.
+Compilation uses the FIPS-capable OTP and SDK without `-crypto fips_mode true`
+or provider activation. After installation, the source rule starts the declared
+BEAM with explicit FIPS activation and fails unless FIPS is enabled, the crypto
+NIF is static, an approved operation succeeds, and a prohibited operation
+fails. Runtime tests repeat that activation explicitly. FIPS-required releases
+persist it in release configuration; ordinary Mix, Rebar, protocol,
+Dialyzer, escript, and writable local actions do not activate FIPS merely
+because the selected toolchain is capable.
 
 The rule does not append `libcrypto.a` to generic `LDFLAGS`; static archive
 ordering remains owned by OTP's generated build. The source action must link

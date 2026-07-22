@@ -1,6 +1,6 @@
 """Cacheable whole-runtime Elixir protocol consolidation."""
 
-load("//private:beam_info.bzl", "ErlangAppInfo", "execution_erlexec", "execution_erts_bin", "fips_erl_args", "flat_runtime_deps", "otp_runtime_env", "path_join", "prepare_crypto_runtime")
+load("//private:beam_info.bzl", "ErlangAppInfo", "execution_erlexec", "execution_erts_bin", "flat_runtime_deps", "otp_runtime_env", "path_join")
 
 ElixirProtocolInfo = provider(
     doc = "Consolidated protocol BEAM files for one runtime application closure.",
@@ -38,7 +38,6 @@ def _elixir_protocols_impl(ctx):
         fail("elixir_protocols requires at least one application")
     output = ctx.actions.declare_directory(ctx.label.name + "_consolidated")
     toolchain = ctx.toolchains["//:toolchain_type"]
-    activation = prepare_crypto_runtime(ctx, toolchain.otpinfo, ctx.label.name + "_crypto_state")
     roots = []
     for app in apps:
         for lib_dir in app[ErlangAppInfo].lib_dirs:
@@ -49,7 +48,6 @@ def _elixir_protocols_impl(ctx):
     args.add_all([
         "-noshell",
         "+fnu",
-    ] + fips_erl_args(toolchain.otpinfo, activate = False) + [
         "-s",
         "elixir",
         "start_cli",
@@ -62,7 +60,6 @@ def _elixir_protocols_impl(ctx):
     args.add_all(roots)
 
     environment = otp_runtime_env(toolchain.otpinfo)
-    environment.update(activation.environment)
     environment.update({
         "ERL_COMPILER_OPTIONS": "deterministic",
         "ERL_LIBS": ":".join([path_join(toolchain.elixirinfo.elixir_home, "lib")] + roots),
@@ -79,7 +76,7 @@ def _elixir_protocols_impl(ctx):
         executable = execution_erlexec(toolchain.otpinfo),
         arguments = [args],
         inputs = depset(
-            transitive = [toolchain.runtime_files, activation.files] + [
+            transitive = [toolchain.runtime_files] + [
                 app[DefaultInfo].files
                 for app in apps
             ],

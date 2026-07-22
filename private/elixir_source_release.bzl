@@ -1,6 +1,6 @@
 """Build pristine Elixir sources against a declared OTP runtime."""
 
-load("//private:beam_info.bzl", "OtpInfo", "erl_env_flags", "execution_erlexec", "execution_erts_bin", "execution_root_path", "fips_erl_args", "otp_runtime_env", "otp_runtime_erl_args", "path_join", "prepare_crypto_runtime")
+load("//private:beam_info.bzl", "OtpInfo", "erl_env_flags", "execution_erlexec", "execution_erts_bin", "execution_root_path", "otp_runtime_env", "otp_runtime_erl_args", "path_join")
 load("//private:elixir_info.bzl", "ElixirInfo", "otp_info_from_dependency")
 load("//private:runtime_archive_info.bzl", "BeamRuntimeSourceInfo")
 
@@ -71,17 +71,14 @@ def _elixir_source_release_impl(ctx):
     _validate_make_options(ctx.attr.make_options)
 
     otp = otp_info_from_dependency(ctx.attr.otp)
-    activation = prepare_crypto_runtime(ctx, otp, ctx.label.name + "_crypto_state")
     child_erl_aflags = erl_env_flags(
         otp_runtime_erl_args(otp) +
-        ["+fnu"] +
-        (["-crypto", "fips_mode", "true"] if otp.fips == "required" else []),
+        ["+fnu"],
     )
     inherited_sdk_environment = sorted({
         key: True
         for key in (
-            (otp.crypto_sdk.execution_wrapper_environment.keys() if otp.crypto_sdk else []) +
-            activation.environment.keys()
+            (otp.crypto_sdk.execution_wrapper_environment.keys() if otp.crypto_sdk else [])
         )
     }.keys())
     output = ctx.actions.declare_directory(ctx.label.name + "_runtime")
@@ -141,7 +138,6 @@ def _elixir_source_release_impl(ctx):
     args.add_all([
         "-noshell",
         "+fnu",
-    ] + fips_erl_args(otp, activate = False) + [
         "-eval",
         _DRIVER_EVAL,
         "-extra",
@@ -151,7 +147,6 @@ def _elixir_source_release_impl(ctx):
         execution_root_path("."),
     ])
     action_env = otp_runtime_env(otp)
-    action_env.update(activation.environment)
     action_env.update({
         "HOME": output.path + ".work/driver_home",
         "LANG": "C",
@@ -164,7 +159,7 @@ def _elixir_source_release_impl(ctx):
         arguments = [args],
         inputs = depset(
             direct = ctx.files.srcs + tool_files + [ctx.file._driver, ctx.file._normalizer, config],
-            transitive = [otp.runtime_files, activation.files],
+            transitive = [otp.runtime_files],
         ),
         tools = [
             ctx.attr.bash[DefaultInfo].files_to_run,
