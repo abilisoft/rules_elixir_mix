@@ -68,6 +68,7 @@ main([ConfigPath]) ->
     FipsRequired = maps:get(fips_required, Config, false),
     StaticCryptoNif = maps:get(static_crypto_nif, Config, false),
     CrossCompiling = maps:get(cross_compiling, Config, false),
+    ok = verify_bootstrap_release(CrossCompiling, maps:get(version, Config)),
     CryptoOptions = crypto_options(maps:get(crypto_sdk, Config, none), FipsRequired, StaticCryptoNif),
     ConfigureOptions = ["--prefix=/"] ++ CryptoOptions ++ maps:get(configure_options, Config),
     try run(
@@ -153,21 +154,6 @@ main([ConfigPath]) ->
         false -> MakeVariables0
     end,
     MakeOptions = maps:get(make_options, Config),
-    %% Preserve OTP's own build-machine compatibility check. Run it separately
-    %% because its script deliberately invokes erl and erlc by basename instead
-    %% of the Make variables used by the remaining cross-build graph.
-    case CrossCompiling of
-        true ->
-            ok = run(
-                maps:get(make, Config),
-                MakeVariables ++ bootstrap_runtime_make_variables(BootstrapRuntimeEnvironment) ++
-                    MakeOptions ++ ["cross_check_erl"],
-                Source,
-                ExternalBootstrapEnvironment
-            );
-        false ->
-            ok
-    end,
     ok = run(
         maps:get(make, Config),
         MakeVariables ++ ["-j" ++ Jobs] ++ MakeOptions ++ ["erl_interface"],
@@ -394,15 +380,18 @@ bootstrap_make_variables(Env, BootstrapLauncher, BootstrapErtsBin, RuntimeEnviro
         "ESCRIPT=" ++ shell_join(Prefix ++ [filename:join(BootstrapErtsBin, "escript")])
     ].
 
-bootstrap_runtime_make_variables(RuntimeEnvironment) ->
-    [
-        Key ++ "=" ++ maps:get(Key, RuntimeEnvironment)
-        || Key <- lists:sort(maps:keys(RuntimeEnvironment))
-    ].
-
 with_external_bootstrap_path(BootstrapTools, Environment) ->
     Existing = maps:get("PATH", Environment, ""),
     Environment#{"PATH" => string:join([BootstrapTools, Existing], ":")}.
+
+verify_bootstrap_release(false, _TargetVersion) ->
+    ok;
+verify_bootstrap_release(true, TargetVersion) ->
+    [TargetRelease | _] = string:tokens(TargetVersion, "."),
+    case erlang:system_info(otp_release) of
+        TargetRelease -> ok;
+        BootstrapRelease -> erlang:error({bootstrap_otp_release_mismatch, TargetRelease, BootstrapRelease})
+    end.
 
 otp_target(Source) ->
     GeneratedMakefiles = lists:sort([
