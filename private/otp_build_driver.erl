@@ -335,6 +335,7 @@ main([ConfigPath]) ->
         maps:get(crypto_execution_wrapper, Config, none),
         ExecutionRoot
     ),
+    ok = ensure_real_executable(ErtsBinOutput, "escript"),
     ok = link_erts_bin(
         InstalledErtsBin,
         ExecErtsBinOutput,
@@ -342,6 +343,7 @@ main([ConfigPath]) ->
         maps:get(crypto_execution_exec_wrapper, Config, none),
         ExecutionRoot
     ),
+    ok = ensure_real_executable(ExecErtsBinOutput, "escript"),
     ok = ensure_parent(ErlOutput),
     ok = remove(ErlOutput),
     ok = stage_erl_launcher(Config, ExecutionRoot, ErtsBinOutput, ErlOutput),
@@ -800,9 +802,11 @@ link_erts_bin(Source, Destination, InstallRoot, Wrapper0, ExecutionRoot) ->
     end.
 
 ensure_real_frontend(RuntimeRoot, Name) ->
-    Bin = filename:join(RuntimeRoot, "bin"),
-    Frontend = filename:join(Bin, Name),
-    RealFrontend = filename:join(Bin, ".real-" ++ Name),
+    ensure_real_executable(filename:join(RuntimeRoot, "bin"), Name).
+
+ensure_real_executable(Directory, Name) ->
+    Frontend = filename:join(Directory, Name),
+    RealFrontend = filename:join(Directory, ".real-" ++ Name),
     true = filelib:is_file(Frontend),
     case file:read_link_info(RealFrontend) of
         {ok, _} ->
