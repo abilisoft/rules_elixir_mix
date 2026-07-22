@@ -791,7 +791,7 @@ def validate_user_env(user_env):
     Args:
       user_env: Caller-supplied environment dictionary.
     """
-    reserved_prefixes = ["DYLD_", "ELIXIR_MAKE_", "ERL_", "HEX_", "MIX_", "OPENSSL_", "RULES_ELIXIR_MIX_", "RUSTLER_PRECOMPILED_"]
+    reserved_prefixes = ["DYLD_", "ELIXIR_MAKE_", "ERL_", "HEX_", "MIX_", "OPENSSL_", "RULES_ELIXIR_MIX_", "RUSTLER_PRECOMPILED_", "TARGET_"]
     reserved = ["BASH_ENV", "BINDIR", "EMU", "FIPS_MODULE_CONF", "HOME", "LANG", "LC_ALL", "LD_LIBRARY_PATH", "LD_PRELOAD", "PATH", "PROGNAME", "ROOTDIR", "SHELL", "SOURCE_DATE_EPOCH", "TEMP", "TMP", "TMPDIR", "TZ"]
     for key in user_env:
         if key in reserved or any([key.startswith(prefix) for prefix in reserved_prefixes]):

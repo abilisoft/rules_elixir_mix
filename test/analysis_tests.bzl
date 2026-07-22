@@ -80,6 +80,10 @@ def _toolchain_analysis_check_impl(ctx):
         fail("unexpected Elixir version {}".format(runtime.elixirinfo.version))
     if runtime.otpinfo.erlexec.basename != "erlexec":
         fail("toolchain must expose native erlexec, got {}".format(runtime.otpinfo.erlexec))
+    if runtime.otpinfo.target_arch not in ["aarch64", "x86_64"]:
+        fail("unexpected OTP target architecture {}".format(runtime.otpinfo.target_arch))
+    if runtime.otpinfo.target_os != "linux" or runtime.otpinfo.target_abi not in ["gnu", "musl"]:
+        fail("unexpected OTP target OS/ABI {}/{}".format(runtime.otpinfo.target_os, runtime.otpinfo.target_abi))
     if not runtime.otpinfo.erts_bin.endswith("erts-17.0.3/bin"):
         fail("unexpected ERTS bin {}".format(runtime.otpinfo.erts_bin))
     if runtime.native_build_tools == None:

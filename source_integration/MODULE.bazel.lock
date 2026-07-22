@@ -249,7 +249,7 @@
     "@@rules_fips+//fips:extensions.bzl%fips_sources": {
       "general": {
         "bzlTransitiveDigest": "bnsvf5bkeUVkhQd1vqbSGr7pORLqSB79ED8LFylt3EI=",
-        "usagesDigest": "k8UZ8wC4eil/BooJcmeeWe+AA3QVNDnNBUDd7Ncz42U=",
+        "usagesDigest": "jbSmqrExKr7ygOdW2KKk4y1HozxNwuqy3t2eprAe6PA=",
         "recordedInputs": [],
         "generatedRepoSpecs": {
           "openssl_core_src": {

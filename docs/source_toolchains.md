@@ -54,6 +54,7 @@ beam.source_toolchain(
     bootstrap_erlexec = "erts-17.0.3/bin/erlexec",
     bootstrap_boot_file = "releases/29/start_clean.boot",
     bootstrap_otp_fully_static = True,
+    bootstrap_libc = "glibc",
     bash = "@native_platform//:bash",
     make = "@native_platform//:make",
     otp_fully_static = True,
@@ -73,13 +74,23 @@ beam.source_toolchain(
 extensionless declared path is passed through `ERL_AFLAGS`, including nested
 bootstrap launches, and no archive installer is executed.
 
-The URL bootstrap form requires `bootstrap_otp_fully_static = True`, and the
+The URL bootstrap form requires an explicit `bootstrap_libc` plus
+`bootstrap_otp_fully_static = True`, and the
 generated prebuilt rule verifies every executable ELF and recursively resolves
 every NIF/shared-object dependency from declared archive inputs before the
 expensive source build begins. A dynamically linked bootstrap must be a
 provider-backed `OtpInfo` target that owns its complete normalized execution
 closure. A wrapper around only `erlexec` is insufficient because `beam.smp`,
 OTP port programs, and loadable NIFs have independent native dependencies.
+
+For a cross-build, set `cross_compile = True`, give
+`bootstrap_exec_compatible_with` the build-machine OS/CPU constraints, and put
+the produced CPU/libc constraints only in `target_compatible_with`. The source
+driver keeps `ERLC_EMULATOR` bound to that declared bootstrap runtime and skips
+OTP's native `bootstrap_setup`/`all_bootstraps` graph, whose generated
+`bootstrap/bin/erl` is a target executable. The ordinary cross-build Make graph
+then uses the declared build VM for BEAM compilation while producing target
+ERTS artifacts. No target emulator, host OTP, or distro tool is discovered.
 
 Another Bazel rule may own the complete bootstrap runtime instead of an HTTP
 archive:

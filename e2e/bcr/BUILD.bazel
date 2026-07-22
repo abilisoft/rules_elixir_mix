@@ -26,6 +26,7 @@ otp_prebuilt_release(
         "@platforms//os:linux",
     ],
     fully_static = True,
+    libc = "glibc",
     version = "29.0.3",
     version_marker = "runtime/otp/releases/29/OTP_VERSION",
 )

@@ -44,6 +44,7 @@ otp_prebuilt_release(
         "@platforms//os:linux",
     ],
     fully_static = True,
+    libc = "glibc",
     version = "29.0.3",
     version_marker = "@otp_runtime_x86_64//:releases/29/OTP_VERSION",
     visibility = ["//visibility:public"],
@@ -59,6 +60,7 @@ otp_prebuilt_release(
         "@platforms//os:linux",
     ],
     fully_static = True,
+    libc = "glibc",
     version = "29.0.3",
     version_marker = "@otp_runtime_arm64//:releases/29/OTP_VERSION",
     visibility = ["//visibility:public"],
@@ -181,9 +183,20 @@ mix_format_test(
 
 mix_format(
     name = "source_catalog_format_sources",
-    srcs = ["source_catalog_fixture/test/test_helper.exs"],
-    formatter_config = "source_catalog_fixture/.formatter.exs",
+    srcs = ["source_catalog_fixture/format_import_deps.exs"],
+    format_opts = ["--check-formatted"],
+    formatter_config = "source_catalog_fixture/.formatter.import_deps.exs",
     mix_config = "source_catalog_fixture/mix.exs",
+    deps = [":format_dependency_lib"],
+)
+
+mix_library(
+    name = "format_dependency_lib",
+    srcs = [],
+    app_name = "format_dependency",
+    data = ["format_dep_fixture/.formatter.exs"],
+    mix_config = "format_dep_fixture/mix.exs",
+    mix_env = "dev",
 )
 
 mix_local(
@@ -223,6 +236,7 @@ erlang_app(
         "erlang/direct_fixture.erl",
         "erlang/direct_fixture_SUITE.erl",
         "@rules_elixir_mix//private:artifact_normalizer.erl",
+        "@rules_elixir_mix//private:otp_build_driver.erl",
         "@rules_elixir_mix//private:runtime_archive_driver.erl",
         "@rules_elixir_mix//test:src/artifact_normalizer_tests.erl",
         "@rules_elixir_mix//test:src/runtime_archive_driver_tests.erl",

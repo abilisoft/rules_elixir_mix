@@ -32,6 +32,7 @@ beam.prebuilt_toolchain(
     otp_type = "tar.gz",
     erlexec = "erts-17.0.3/bin/erlexec",
     otp_fully_static = True,
+    libc = "glibc",
     elixir_version = "1.20.2",
     elixir_url = "https://artifacts.example/elixir-1.20.2-otp-29-linux-x86_64.tar.gz",
     elixir_sha256 = "...",

@@ -71,6 +71,7 @@ escript_codegen = rule(
         "tool": attr.label(mandatory = True, executable = True, cfg = "exec"),
     },
     doc = "Execute a generated escript as a tool in a network-blocked action.",
+    toolchains = ["@rules_elixir_mix//:toolchain_type"],
 )
 
 def _escript_write_impl(ctx):
@@ -98,4 +99,5 @@ escript_write = rule(
         "tool": attr.label(mandatory = True, executable = True, cfg = "exec"),
     },
     doc = "Execute the minimal escript fixture as a declared code-generation tool.",
+    toolchains = ["@rules_elixir_mix//:toolchain_type"],
 )

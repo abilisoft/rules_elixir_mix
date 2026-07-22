@@ -9,6 +9,31 @@ All notable user-facing changes are recorded here. Signed Git tags and GitHub
 releases identify the exact source; this project is not yet published to the
 Bazel Central Registry.
 
+## 0.3.5 - 2026-07-22
+
+### Added
+
+- Prebuilt and source OTP providers expose explicit target OS, architecture,
+  and libc ABI metadata for target-aware native-package selection.
+- Checksum-pinned archive bootstraps declare their libc explicitly instead of
+  inheriting the produced runtime ABI.
+- The source matrix covers an AMD64 GNU execution/bootstrap VM cross-building
+  an Arm64 musl OTP runtime.
+
+### Fixed
+
+- ARM64 OTP cross-builds keep every BEAM compilation step on the declared
+  build-machine bootstrap VM. They no longer enter OTP's native secondary
+  bootstrap through the target `erlexec`.
+- RustlerPrecompiled receives `TARGET_ARCH`, `TARGET_OS`, `TARGET_ABI`, and
+  `TARGET_VENDOR` from the Bazel target platform before selecting its locked
+  archive.
+- `mix_format` remains source-only while staging declared dependency formatter
+  metadata for offline `.formatter.exs` `import_deps` evaluation.
+- Provider-backed `mix_escript` outputs use a cwd-independent shell-free
+  launcher with the complete OTP/SDK environment, payload, and adjacent
+  runtime sidecar in `DefaultInfo.files` and runfiles.
+
 ## 0.3.4 - 2026-07-22
 
 ### Added

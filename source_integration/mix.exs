@@ -6,6 +6,7 @@ defmodule SourceIntegrationApp.MixProject do
       app: :source_integration_app,
       version: "0.1.0",
       elixir: "~> 1.20",
+      escript: [main_module: SourceIntegrationApp.Escript],
       start_permanent: Mix.env() == :prod,
       deps: [
         {:bandit, "~> 1.0"},

@@ -5,7 +5,7 @@ module(
 )
 
 bazel_dep(name = "platforms", version = "1.1.0")
-bazel_dep(name = "rules_elixir_mix", version = "0.3.4")
+bazel_dep(name = "rules_elixir_mix", version = "0.3.5")
 local_path_override(
     module_name = "rules_elixir_mix",
     path = "..",
@@ -68,6 +68,7 @@ elixir_config.prebuilt_toolchain(
         "@platforms//cpu:x86_64",
         "@platforms//os:linux",
     ],
+    libc = "glibc",
     otp_boot_file = "releases/29/start_clean.boot",
     otp_fully_static = True,
     otp_sha256 = "c44ba721fd224a0ca98ae736b2932f84f6c4d9aaf3179aeed5de555ca815d0b4",

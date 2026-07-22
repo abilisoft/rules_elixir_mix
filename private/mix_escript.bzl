@@ -1,6 +1,6 @@
 """Hermetic, cacheable Mix escript output rule."""
 
-load("//private:beam_info.bzl", "ErlangAppInfo", "crypto_runtime_files", "erl_env_flags", "execution_erts_bin", "flat_compile_deps", "flat_deps", "path_join")
+load("//private:beam_info.bzl", "ErlangAppInfo", "crypto_runtime_files", "erl_env_flags", "execution_erts_bin", "execution_root_path", "flat_compile_deps", "flat_deps", "otp_runtime_env", "otp_runtime_erl_args", "path_join")
 load("//private:mix_execution.bzl", "run_mix_action")
 load("//private:mix_info.bzl", "MixProjectInfo")
 
@@ -40,19 +40,26 @@ def _escript_program(ctx, otp, output):
         path_join(execution_erts_bin(otp, runfiles = True), executable),
     )
 
-def _wrapper_environment(ctx, otp, output, program):
+def _wrapper_environment(otp, program, payload):
     sdk = otp.crypto_sdk
     if not sdk or not sdk.execution_exec_wrapper:
         return {}
-    sysroot = _runfiles_artifact_path(ctx, output, sdk.sysroot.short_path)
-    activation_root = _runfiles_artifact_path(ctx, output, sdk.prepared_state.short_path)
+    sysroot = execution_root_path(sdk.sysroot.path)
+    activation_root = execution_root_path(sdk.prepared_state.path)
     environment = {
         key: value.replace("{sysroot}", sysroot).replace("{activation_root}", activation_root)
         for key, value in sdk.runtime_environment.items()
     }
+    environment.update(otp_runtime_env(otp))
     environment.update({
-        key: value.replace("{sysroot}", sysroot).replace("{program}", program)
+        key: value.replace("{sysroot}", sysroot).replace("{program}", execution_root_path(program))
         for key, value in sdk.execution_wrapper_environment.items()
+    })
+    environment.update({
+        "ERL_AFLAGS": erl_env_flags(otp_runtime_erl_args(otp) + ["+fnu"]),
+        "PROGNAME": "escript",
+        "RULES_FIPS_RUNTIME_FIXED_ARG_0": execution_root_path(payload.path),
+        "RULES_FIPS_RUNTIME_FIXED_ARG_COUNT": "1",
     })
     return environment
 
@@ -88,8 +95,10 @@ def _mix_escript_impl(ctx):
     if sdk and not sdk.fully_static and not sdk.execution_exec_wrapper:
         fail("mix_escript requires a non-static crypto SDK to provide its shell-free execution wrapper")
 
+    wrapped = bool(sdk and sdk.execution_exec_wrapper)
     output = ctx.actions.declare_file(output_name)
-    build_root = output.path + ".build"
+    escript = ctx.actions.declare_file(output_name + ".escript") if wrapped else output
+    build_root = escript.path + ".build"
     dependencies = flat_deps([ctx.attr.lib])
     action_dependencies = flat_compile_deps([ctx.attr.lib])
     dependency_apps = [
@@ -118,14 +127,14 @@ def _mix_escript_impl(ctx):
         )
     else:
         interpreter = escript_program
-    shebang = "#!{}\n".format(interpreter)
+    shebang = "#!/rules_elixir_mix/escript\n" if wrapped else "#!{}\n".format(interpreter)
     if len(shebang) > 255:
         fail("mix_escript interpreter path exceeds Linux's 255-byte shebang limit; shorten the package or target name")
     emu_args = erl_env_flags(["+fnu"] + _boot_args(ctx, otp, output))
     internal_env = {
         "RULES_ELIXIR_MIX_BAZEL_DEPS": "true",
         "RULES_ELIXIR_MIX_ESCRIPT_DEPS_MANIFEST": dependency_manifest.path,
-        "RULES_ELIXIR_MIX_ESCRIPT_OUTPUT": output.path,
+        "RULES_ELIXIR_MIX_ESCRIPT_OUTPUT": escript.path,
         "RULES_ELIXIR_MIX_ESCRIPT_SHEBANG": shebang,
         "RULES_ELIXIR_MIX_PRELOAD_DEPS": "true",
         "RULES_ELIXIR_MIX_PREPARE_COMPILED_PROJECT": "true",
@@ -150,7 +159,7 @@ def _mix_escript_impl(ctx):
         inputs = project_files + ctx.files.data + [dependency_manifest],
         project_inputs = project_files,
         project_entries = project.project_entries,
-        outputs = [output],
+        outputs = [escript],
         internal_env = internal_env,
         user_env = {
             key: ctx.expand_location(value, ctx.attr.data)
@@ -159,7 +168,13 @@ def _mix_escript_impl(ctx):
         mnemonic = "MIXESCRIPT",
     )
 
-    wrapper_environment = _wrapper_environment(ctx, otp, output, escript_program)
+    if wrapped:
+        ctx.actions.symlink(
+            output = output,
+            target_file = sdk.execution_exec_wrapper.executable,
+            is_executable = True,
+        )
+    wrapper_environment = _wrapper_environment(otp, path_join(execution_erts_bin(otp), ".real-escript"), escript)
     runtime_environment = None
     runtime_direct = []
     if wrapper_environment:
@@ -172,18 +187,19 @@ def _mix_escript_impl(ctx):
         direct = runtime_direct + prepared_state,
         transitive = [toolchain.runtime_files, crypto_runtime_files(otp)],
     )
+    default_files = [output, escript] + runtime_direct
     runfiles = ctx.runfiles(
-        files = [output],
+        files = [output, escript] + runtime_direct,
         transitive_files = runtime_files,
     )
     return [
         DefaultInfo(
             executable = output,
-            files = depset([output]),
+            files = depset(default_files),
             runfiles = runfiles,
         ),
         MixEscriptInfo(
-            escript = output,
+            escript = escript,
             runtime_environment = runtime_environment,
         ),
     ]

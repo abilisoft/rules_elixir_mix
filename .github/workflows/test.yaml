@@ -196,22 +196,22 @@ jobs:
           - arch: x86_64
             libc: musl
             runner: ubuntu-24.04
-            platform_flags: --platforms=//:source_target_x86_64 --extra_execution_platforms=//:source_execution_x86_64
+            platform_flags: --platforms=//:source_target_x86_64 --extra_execution_platforms=//:source_execution_x86_64,//:source_escript_execution_x86_64
             toolchain_name: catalog_source_x86_64
           - arch: arm64
             libc: musl
             runner: ubuntu-24.04-arm
-            platform_flags: --platforms=//:source_target_arm64 --extra_execution_platforms=//:source_execution_arm64
+            platform_flags: --platforms=//:source_target_arm64 --extra_execution_platforms=//:source_execution_arm64,//:source_escript_execution_arm64
             toolchain_name: catalog_source_arm64
           - arch: x86_64
             libc: glibc
             runner: ubuntu-24.04
-            platform_flags: --platforms=//:source_target_glibc_x86_64 --extra_execution_platforms=//:source_execution_x86_64
+            platform_flags: --platforms=//:source_target_glibc_x86_64 --extra_execution_platforms=//:source_execution_x86_64,//:source_escript_execution_x86_64
             toolchain_name: catalog_source_glibc_x86_64
           - arch: arm64
             libc: glibc
             runner: ubuntu-24.04-arm
-            platform_flags: --platforms=//:source_target_glibc_arm64 --extra_execution_platforms=//:source_execution_arm64
+            platform_flags: --platforms=//:source_target_glibc_arm64 --extra_execution_platforms=//:source_execution_arm64,//:source_escript_execution_arm64
             toolchain_name: catalog_source_glibc_arm64
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 180
@@ -251,6 +251,15 @@ jobs:
           //:fips_runtime
           //:release_test
           //:test
+      - name: Execute a provider-backed escript as a declared tool
+        if: ${{ env.BUILDBUDDY_ORG_API_KEY != '' }}
+        working-directory: source_integration
+        run: >-
+          bazel build
+          ${BAZEL_REMOTE_FALLBACK}
+          ${BAZEL_PLATFORM_FLAGS}
+          --remote_header=x-buildbuddy-api-key="${BUILDBUDDY_ORG_API_KEY}"
+          //:source_escript_codegen
       - name: Analyze the source-toolchain graph without remote credentials
         if: ${{ env.BUILDBUDDY_ORG_API_KEY == '' }}
         working-directory: source_integration
@@ -263,6 +272,7 @@ jobs:
           ${BAZEL_REMOTE_FALLBACK}
           ${BAZEL_PLATFORM_FLAGS}
           @elixir_config//${{ matrix.toolchain_name }}:runtime
+          //:source_escript_codegen
       - name: Require a warm source-toolchain cache
         if: ${{ env.BUILDBUDDY_ORG_API_KEY != '' }}
         working-directory: source_integration
@@ -277,6 +287,49 @@ jobs:
           //:fips_runtime
           //:release_test
           //:test
+      - name: Require a warm provider-backed escript cache
+        if: ${{ env.BUILDBUDDY_ORG_API_KEY != '' }}
+        working-directory: source_integration
+        run: >-
+          bazel build
+          ${BAZEL_REMOTE_FALLBACK}
+          ${BAZEL_PLATFORM_FLAGS}
+          --remote_header=x-buildbuddy-api-key="${BUILDBUDDY_ORG_API_KEY}"
+          //:source_escript_codegen
+
+  source-cross-toolchain:
+    name: Source cross-toolchain (AMD64 GNU execution to ARM64 musl)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825a76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
+        with:
+          bazelisk-version: 1.29.0
+          bazelisk-cache: true
+          disk-cache: true
+          repository-cache: true
+      - name: Build ARM64 OTP with the declared AMD64 bootstrap runtime
+        if: ${{ env.BUILDBUDDY_ORG_API_KEY != '' }}
+        working-directory: source_integration
+        run: >-
+          bazel build
+          ${BAZEL_REMOTE_FALLBACK}
+          --platforms=//:source_target_cross_arm64
+          --extra_execution_platforms=//:source_execution_x86_64
+          --remote_header=x-buildbuddy-api-key="${BUILDBUDDY_ORG_API_KEY}"
+          @elixir_config//catalog_source_cross_arm64:otp
+      - name: Analyze the cross-toolchain graph without remote credentials
+        if: ${{ env.BUILDBUDDY_ORG_API_KEY == '' }}
+        working-directory: source_integration
+        run: >-
+          bazel build --nobuild
+          ${BAZEL_REMOTE_FALLBACK}
+          --platforms=//:source_target_cross_arm64
+          --extra_execution_platforms=//:source_execution_x86_64
+          @elixir_config//catalog_source_cross_arm64:otp
 
   validate-gate:
     name: validate
@@ -314,7 +367,9 @@ jobs:
 
   source-toolchain-gate:
     name: source-toolchain
-    needs: source-toolchain
+    needs:
+      - source-cross-toolchain
+      - source-toolchain
     if: ${{ always() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -322,9 +377,13 @@ jobs:
       - name: Require every source-toolchain architecture
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
+          CROSS_RESULT: ${{ needs.source-cross-toolchain.result }}
           MATRIX_RESULT: ${{ needs.source-toolchain.result }}
         with:
           script: |
             if (process.env.MATRIX_RESULT !== "success") {
               core.setFailed(`source-toolchain matrix ended with ${process.env.MATRIX_RESULT}`);
+            }
+            if (process.env.CROSS_RESULT !== "success") {
+              core.setFailed(`source cross-toolchain ended with ${process.env.CROSS_RESULT}`);
             }

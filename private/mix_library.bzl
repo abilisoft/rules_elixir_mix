@@ -205,9 +205,19 @@ def _mix_compile_impl(ctx):
     if precompiled_native_manifest:
         internal_env["RULES_ELIXIR_MIX_PRECOMPILED_NATIVE_MANIFEST"] = precompiled_native_manifest.path
     if rustler_precompiled_manifest:
+        otp = ctx.toolchains["//:toolchain_type"].otpinfo
+        target_abi = getattr(otp, "target_abi", "")
+        target_arch = getattr(otp, "target_arch", "")
+        target_os = getattr(otp, "target_os", "")
+        if not target_abi or not target_arch or not target_os:
+            fail("rustler_precompiled_artifacts require target ABI, architecture, and OS metadata from the OTP toolchain")
         internal_env.update({
             "RULES_ELIXIR_MIX_RUSTLER_PRECOMPILED_MANIFEST": rustler_precompiled_manifest.path,
             "RUSTLER_PRECOMPILED_GLOBAL_CACHE_PATH": build_root.path + ".rules_elixir_mix_state/rustler_precompiled",
+            "TARGET_ABI": target_abi,
+            "TARGET_ARCH": target_arch,
+            "TARGET_OS": target_os,
+            "TARGET_VENDOR": "unknown",
         })
 
     if ctx.attr.native_build and (ctx.attr.native_make_jobs < 1 or ctx.attr.native_make_jobs > 64):

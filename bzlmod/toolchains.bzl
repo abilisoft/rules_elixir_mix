@@ -113,6 +113,7 @@ def _toolchains_impl(module_ctx):
     bootstrap_boot_files = {}
     bootstrap_version_markers = {}
     bootstrap_fully_static_otps = {}
+    bootstrap_libcs = {}
     bootstrap_exec_constraints = {}
     otp_source_files = {}
     otp_source_directory_manifests = {}
@@ -183,6 +184,8 @@ def _toolchains_impl(module_ctx):
                     fail("prebuilt_toolchain '{}' provider form requires both otp and elixir".format(tag.name))
                 if tag.crypto_sdk or tag.fips != "disabled" or tag.static_crypto_nif:
                     fail("prebuilt_toolchain '{}' provider targets own their OTP crypto/FIPS contract; remove crypto_sdk, fips, and static_crypto_nif from the tag".format(tag.name))
+                if tag.libc:
+                    fail("prebuilt_toolchain '{}' provider targets own their libc metadata; remove libc from the tag".format(tag.name))
                 otp_targets[tag.name] = str(tag.otp)
                 elixir_targets[tag.name] = str(tag.elixir)
             else:
@@ -192,8 +195,11 @@ def _toolchains_impl(module_ctx):
                     fail("prebuilt_toolchain '{}' archive form must declare exactly one of otp_fully_static=True or otp_runtime_wrapped=True".format(tag.name))
                 if tag.otp_runtime_wrapped and not tag.crypto_sdk:
                     fail("prebuilt_toolchain '{}' otp_runtime_wrapped=True requires crypto_sdk".format(tag.name))
+                if tag.libc not in ["glibc", "musl"]:
+                    fail("prebuilt_toolchain '{}' archive form requires libc='glibc' or libc='musl'".format(tag.name))
                 _validate_sha256(tag.otp_sha256, "otp_sha256", tag.name)
                 _validate_sha256(tag.elixir_sha256, "elixir_sha256", tag.name)
+                libcs[tag.name] = tag.libc
             types[tag.name] = INSTALLATION_TYPE_PREBUILT
             otp_versions[tag.name] = tag.otp_version
             elixir_versions[tag.name] = tag.elixir_version
@@ -253,16 +259,16 @@ def _toolchains_impl(module_ctx):
         for tag in mod.tags.source_toolchain:
             _claim_name(mod, tag.name, owners)
             provider_bootstrap = bool(tag.bootstrap_otp)
-            archive_bootstrap = bool(tag.bootstrap_otp_url or tag.bootstrap_otp_urls or tag.bootstrap_otp_sha256 or tag.bootstrap_otp_version or tag.bootstrap_erlexec)
+            archive_bootstrap = bool(tag.bootstrap_otp_url or tag.bootstrap_otp_urls or tag.bootstrap_otp_sha256 or tag.bootstrap_otp_version or tag.bootstrap_erlexec or tag.bootstrap_libc)
             if provider_bootstrap == archive_bootstrap:
                 fail("source_toolchain '{}' must declare exactly one of bootstrap_otp or the checksum-pinned bootstrap archive fields".format(tag.name))
             if provider_bootstrap:
-                if any([tag.bootstrap_otp_url, tag.bootstrap_otp_urls, tag.bootstrap_otp_sha256, tag.bootstrap_otp_version, tag.bootstrap_otp_strip_prefix, tag.bootstrap_otp_type, tag.bootstrap_erlexec, tag.bootstrap_version_marker, tag.bootstrap_boot_file, tag.bootstrap_otp_fully_static]):
+                if any([tag.bootstrap_otp_url, tag.bootstrap_otp_urls, tag.bootstrap_otp_sha256, tag.bootstrap_otp_version, tag.bootstrap_otp_strip_prefix, tag.bootstrap_otp_type, tag.bootstrap_erlexec, tag.bootstrap_version_marker, tag.bootstrap_boot_file, tag.bootstrap_otp_fully_static, tag.bootstrap_libc]):
                     fail("source_toolchain '{}' provider-backed bootstrap_otp is mutually exclusive with bootstrap archive metadata".format(tag.name))
                 bootstrap_otp_targets[tag.name] = str(tag.bootstrap_otp)
             else:
-                if not all([tag.bootstrap_otp_url, tag.bootstrap_otp_sha256, tag.bootstrap_otp_version, tag.bootstrap_erlexec]):
-                    fail("source_toolchain '{}' archive bootstrap requires bootstrap_otp_url, bootstrap_otp_sha256, bootstrap_otp_version, and bootstrap_erlexec".format(tag.name))
+                if not all([tag.bootstrap_otp_url, tag.bootstrap_otp_sha256, tag.bootstrap_otp_version, tag.bootstrap_erlexec, tag.bootstrap_libc]):
+                    fail("source_toolchain '{}' archive bootstrap requires bootstrap_otp_url, bootstrap_otp_sha256, bootstrap_otp_version, bootstrap_erlexec, and bootstrap_libc".format(tag.name))
                 if not tag.bootstrap_otp_fully_static:
                     fail("source_toolchain '{}' archive bootstrap must declare bootstrap_otp_fully_static=True; dynamic bootstraps require provider-backed OtpInfo".format(tag.name))
                 _validate_sha256(tag.bootstrap_otp_sha256, "bootstrap_otp_sha256", tag.name)
@@ -291,6 +297,7 @@ def _toolchains_impl(module_ctx):
             if not provider_bootstrap:
                 bootstrap_otp_versions[tag.name] = tag.bootstrap_otp_version
                 bootstrap_fully_static_otps[tag.name] = str(tag.bootstrap_otp_fully_static)
+                bootstrap_libcs[tag.name] = tag.bootstrap_libc
             elixir_versions[tag.name] = tag.elixir_version
             execution, target = _platform_constraints(tag)
             if tag.libc == "musl" and any([constraint.endswith("//cpu:x86_64") for constraint in target]) and tag.jit != "disabled":
@@ -389,6 +396,7 @@ def _toolchains_impl(module_ctx):
         bootstrap_boot_files = bootstrap_boot_files,
         bootstrap_version_markers = bootstrap_version_markers,
         bootstrap_fully_static_otps = bootstrap_fully_static_otps,
+        bootstrap_libcs = bootstrap_libcs,
         bootstrap_exec_compatible_withs = bootstrap_exec_constraints,
         otp_source_files = otp_source_files,
         otp_source_directory_manifests = otp_source_directory_manifests,
@@ -446,6 +454,7 @@ prebuilt_toolchain = tag_class(attrs = {
     "erlexec": attr.string(),
     "otp_fully_static": attr.bool(default = False),
     "otp_runtime_wrapped": attr.bool(default = False),
+    "libc": attr.string(values = ["glibc", "musl"]),
     "otp_boot_file": attr.string(),
     "otp_version_marker": attr.string(),
     "elixir": attr.label(),
@@ -483,6 +492,7 @@ source_toolchain = tag_class(attrs = {
     "bootstrap_boot_file": attr.string(),
     "bootstrap_version_marker": attr.string(),
     "bootstrap_otp_fully_static": attr.bool(default = False),
+    "bootstrap_libc": attr.string(values = ["glibc", "musl"]),
     "bootstrap_exec_compatible_with": attr.label_list(),
     "otp_version": attr.string(default = DEFAULT_OTP_VERSION),
     "otp_url": attr.string(),

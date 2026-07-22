@@ -2,11 +2,13 @@ load(
     "@rules_elixir_mix//:defs.bzl",
     "elixir_fips_runtime_test",
     "elixir_release_test",
+    "mix_escript",
     "mix_library",
     "mix_release",
     "mix_test",
     "otp_prebuilt_release",
 )
+load("@rules_elixir_mix//:integration/generated_asset.bzl", "escript_write")
 load(":rules_fips_sdk.bzl", "rules_fips_crypto_sdk")
 
 package(default_visibility = ["//visibility:public"])
@@ -21,6 +23,7 @@ otp_prebuilt_release(
         "@platforms//os:linux",
     ],
     fully_static = True,
+    libc = "glibc",
     version = "29.0.3",
     version_marker = "@bootstrap_otp_runtime//:releases/29/OTP_VERSION",
 )
@@ -35,6 +38,7 @@ otp_prebuilt_release(
         "@platforms//os:linux",
     ],
     fully_static = True,
+    libc = "glibc",
     version = "29.0.3",
     version_marker = "@bootstrap_otp_runtime_arm64//:releases/29/OTP_VERSION",
 )
@@ -72,6 +76,40 @@ platform(
 )
 
 platform(
+    name = "source_escript_execution_x86_64",
+    constraint_values = [
+        "@rules_fips//fips/platforms:glibc_2_35",
+        "@rules_fips//fips/platforms:openssl_fips_glibc_amd64",
+        "@elixir_config//:runtime_catalog_source_glibc_x86_64",
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    exec_properties = {
+        "Arch": "amd64",
+        "EstimatedCPU": "4",
+        "EstimatedMemory": "8GB",
+        "OSFamily": "linux",
+    },
+)
+
+platform(
+    name = "source_escript_execution_arm64",
+    constraint_values = [
+        "@rules_fips//fips/platforms:glibc_2_35",
+        "@rules_fips//fips/platforms:openssl_fips_glibc_arm64",
+        "@elixir_config//:runtime_catalog_source_glibc_arm64",
+        "@platforms//cpu:arm64",
+        "@platforms//os:linux",
+    ],
+    exec_properties = {
+        "Arch": "arm64",
+        "EstimatedCPU": "4",
+        "EstimatedMemory": "8GB",
+        "OSFamily": "linux",
+    },
+)
+
+platform(
     name = "source_target_x86_64",
     constraint_values = [
         "@rules_fips//fips/platforms:musl",
@@ -88,6 +126,17 @@ platform(
         "@rules_fips//fips/platforms:musl",
         "@rules_fips//fips/platforms:openssl_fips_musl_arm64",
         "@elixir_config//:runtime_catalog_source_arm64",
+        "@platforms//cpu:arm64",
+        "@platforms//os:linux",
+    ],
+)
+
+platform(
+    name = "source_target_cross_arm64",
+    constraint_values = [
+        "@rules_fips//fips/platforms:musl",
+        "@rules_fips//fips/platforms:openssl_fips_musl_arm64",
+        "@elixir_config//:runtime_catalog_source_cross_arm64",
         "@platforms//cpu:arm64",
         "@platforms//os:linux",
     ],
@@ -201,6 +250,17 @@ mix_library(
         "@mix_deps//:phoenix_html",
         "@mix_deps//:phoenix_live_view",
     ],
+)
+
+mix_escript(
+    name = "source_escript",
+    lib = ":app",
+    output_name = "source-integration-escript",
+)
+
+escript_write(
+    name = "source_escript_codegen",
+    tool = ":source_escript",
 )
 
 mix_release(

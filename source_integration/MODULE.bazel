@@ -5,15 +5,15 @@ module(
 )
 
 bazel_dep(name = "platforms", version = "1.1.0")
-bazel_dep(name = "rules_elixir_mix", version = "0.3.4")
-bazel_dep(name = "rules_fips", version = "0.3.4")
+bazel_dep(name = "rules_elixir_mix", version = "0.3.5")
+bazel_dep(name = "rules_fips", version = "0.3.5")
 
 # Direct, checksum-verified pin until rules_fips is published to BCR.
 archive_override(
     module_name = "rules_fips",
-    integrity = "sha256-8h0j6G/FCwRwTn8375uxECmLyyB8LdCDESOUgWnmIX4=",
-    strip_prefix = "rules_fips-10abdd04434487aa9afc36059a931df12d38c3ca",
-    urls = ["https://github.com/abilisoft/rules_fips/archive/10abdd04434487aa9afc36059a931df12d38c3ca.tar.gz"],
+    integrity = "sha256-dqFd50UpEe68OQ7ksDFMTXGpZ5cVFO4PCE5vm1DuFlk=",
+    strip_prefix = "rules_fips-823311e8d7ac8e0904bf468529d548c4e8c1d232",
+    urls = ["https://github.com/abilisoft/rules_fips/archive/823311e8d7ac8e0904bf468529d548c4e8c1d232.tar.gz"],
 )
 
 local_path_override(
@@ -160,6 +160,44 @@ elixir_config.source_toolchain(
     ],
 )
 elixir_config.source_toolchain(
+    name = "catalog_source_cross_arm64",
+    bash = "@rules_fips//fips/toolchains:source_shell",
+    bootstrap_exec_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    bootstrap_otp = "//:bootstrap_otp",
+    configure_options = [
+        "--disable-pgo",
+        "--disable-sctp",
+        "--host=aarch64-buildroot-linux-musl",
+        "--without-javac",
+        "--without-odbc",
+        "--without-termcap",
+        "--without-wx",
+    ],
+    cross_compile = True,
+    crypto_sdk = "//:openssl_fips_crypto_sdk",
+    exec_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    fips = "required",
+    jit = "required",
+    jobs = 8,
+    libc = "musl",
+    make = "@rules_fips//fips/toolchains:hermetic_make",
+    make_options = ["SKIP_APPLICATIONS=wx debugger observer et reltool"],
+    perl = "@rules_fips//fips/toolchains:hermetic_perl",
+    posix_tools = ["@rules_fips//fips/toolchains:posix_tools"],
+    runtime_abi = "@rules_fips//fips/platforms:openssl_fips_musl_arm64",
+    static_crypto_nif = True,
+    target_compatible_with = [
+        "@platforms//cpu:arm64",
+        "@platforms//os:linux",
+    ],
+)
+elixir_config.source_toolchain(
     name = "catalog_source_glibc_x86_64",
     bash = "@rules_fips//fips/toolchains:source_shell",
     bootstrap_exec_compatible_with = [
@@ -250,6 +288,9 @@ register_toolchains(
     "@elixir_config//catalog_source_arm64:otp_toolchain",
     "@elixir_config//catalog_source_arm64:test_toolchain",
     "@elixir_config//catalog_source_arm64:toolchain",
+    "@elixir_config//catalog_source_cross_arm64:otp_toolchain",
+    "@elixir_config//catalog_source_cross_arm64:test_toolchain",
+    "@elixir_config//catalog_source_cross_arm64:toolchain",
     "@elixir_config//catalog_source_glibc_arm64:otp_toolchain",
     "@elixir_config//catalog_source_glibc_arm64:test_toolchain",
     "@elixir_config//catalog_source_glibc_arm64:toolchain",

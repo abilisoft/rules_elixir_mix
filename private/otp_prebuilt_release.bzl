@@ -172,6 +172,9 @@ def _otp_prebuilt_release_impl(ctx):
             runtime_wrapped = ctx.attr.runtime_wrapped,
             runtime_files = runtime_files,
             static_crypto_nif = ctx.attr.static_crypto_nif,
+            target_abi = ctx.attr.target_abi,
+            target_arch = ctx.attr.target_arch,
+            target_os = "linux",
             version_file = version_file,
         ),
     ]
@@ -211,6 +214,8 @@ _otp_prebuilt_release = rule(
             doc = "Installed releases/<major>/OTP_VERSION file.",
         ),
         "static_crypto_nif": attr.bool(default = False),
+        "target_abi": attr.string(mandatory = True, values = ["gnu", "musl"]),
+        "target_arch": attr.string(mandatory = True, values = ["aarch64", "x86_64"]),
         "_normalizer": attr.label(
             default = Label("//private:artifact_normalizer.erl"),
             allow_single_file = [".erl"],
@@ -218,12 +223,13 @@ _otp_prebuilt_release = rule(
     },
 )
 
-def otp_prebuilt_release(name, exec_compatible_with, **kwargs):
+def otp_prebuilt_release(name, exec_compatible_with, libc, **kwargs):
     """Exposes a prebuilt OTP runtime with an explicit execution ABI.
 
     Args:
       name: Target name.
       exec_compatible_with: Linux OS and exactly one supported execution CPU.
+      libc: Native runtime C ABI: glibc or musl.
       **kwargs: Remaining `_otp_prebuilt_release` attributes and common rule attributes.
     """
     constraints = [str(value) for value in exec_compatible_with]
@@ -239,8 +245,12 @@ def otp_prebuilt_release(name, exec_compatible_with, **kwargs):
                 "@platforms//cpu:x86_64 or @platforms//cpu:arm64"
             ).format(name),
         )
+    if libc not in ["glibc", "musl"]:
+        fail("otp_prebuilt_release '{}' libc must be 'glibc' or 'musl'".format(name))
     _otp_prebuilt_release(
         name = name,
         exec_compatible_with = exec_compatible_with,
+        target_abi = "gnu" if libc == "glibc" else "musl",
+        target_arch = "x86_64" if cpus[0].endswith("//cpu:x86_64") else "aarch64",
         **kwargs
     )

@@ -125,7 +125,13 @@ main([ConfigPath]) ->
     %% emulator-link variable to the upstream Linux value; dynamically loaded
     %% NIFs resolve the public enif_* API from beam.smp through these exports.
     MakeExport = "DEXPORT=-Wl,-export-dynamic",
-    MakeVariables = [
+    BootstrapMakeVariables = bootstrap_make_variables(
+        absolute(maps:get(env, Config)),
+        BootstrapLauncher,
+        BootstrapErtsBin,
+        BootstrapRuntimeEnvironment
+    ),
+    MakeVariables0 = [
         MakeShell,
         MakeDeterministic,
         MakeArFlags,
@@ -133,11 +139,35 @@ main([ConfigPath]) ->
         MakePath,
         MakeTarget
     ],
-    FinalMakeVariables = case CrossCompiling of
-        true -> MakeVariables ++ ["BOOT_PREFIX="];
-        false -> MakeVariables
+    %% Every cross-build Make traversal must resolve build tools from the
+    %% declared bootstrap runtime. CROSS_COMPILING propagates through recursive
+    %% Make calls so OTP selects its bootstrap yielding_c_fun generator, while
+    %% an empty BOOT_PREFIX prevents the target bootstrap/bin from entering PATH.
+    %% Bind the upstream ERL/ERLC/ESCRIPT variables to the execution-platform
+    %% runtime as command-line variables so they retain precedence in recursive
+    %% Make calls. The declared env executable restores the bootstrap runtime
+    %% fields at each invocation; OTP's Makefiles legitimately reuse BINDIR for
+    %% target outputs, so exporting that field alone is insufficient.
+    MakeVariables = case CrossCompiling of
+        true -> MakeVariables0 ++ ["CROSS_COMPILING=yes", "BOOT_PREFIX="] ++ BootstrapMakeVariables;
+        false -> MakeVariables0
     end,
     MakeOptions = maps:get(make_options, Config),
+    %% Preserve OTP's own build-machine compatibility check. Run it separately
+    %% because its script deliberately invokes erl and erlc by basename instead
+    %% of the Make variables used by the remaining cross-build graph.
+    case CrossCompiling of
+        true ->
+            ok = run(
+                maps:get(make, Config),
+                MakeVariables ++ bootstrap_runtime_make_variables(BootstrapRuntimeEnvironment) ++
+                    MakeOptions ++ ["cross_check_erl"],
+                Source,
+                ExternalBootstrapEnvironment
+            );
+        false ->
+            ok
+    end,
     ok = run(
         maps:get(make, Config),
         MakeVariables ++ ["-j" ++ Jobs] ++ MakeOptions ++ ["erl_interface"],
@@ -184,34 +214,45 @@ main([ConfigPath]) ->
         Source,
         ExternalBootstrapEnvironment
     ),
-    ok = run(
-        maps:get(make, Config),
-        MakeVariables ++ ["-j" ++ Jobs] ++ MakeOptions ++ ["bootstrap_setup"],
-        Source,
-        ExternalBootstrapEnvironment
-    ),
     RuntimeBuildEnvironment = case CrossCompiling of
         true -> ExternalBootstrapEnvironment;
         false -> MakeEnvironment
     end,
-    %% OTP documents all_bootstraps as the complete compiler bootstrap
-    %% boundary. Cross builds continue using the declared build-machine OTP;
-    %% target BEAM executables cannot run on that execution platform.
+    %% OTP's native build creates and executes bootstrap/bin/erl while building
+    %% its secondary and tertiary compilers. Its cross-build graph deliberately
+    %% excludes that target: bootstrap/bin/erl is backed by the target erlexec,
+    %% which must never execute on the build platform. Cross builds keep using
+    %% the declared build-machine OTP from BootstrapTools for every BEAM step.
+    case CrossCompiling of
+        true ->
+            ok;
+        false ->
+            ok = run(
+                maps:get(make, Config),
+                MakeVariables ++ ["-j" ++ Jobs] ++ MakeOptions ++ ["bootstrap_setup"],
+                Source,
+                ExternalBootstrapEnvironment
+            ),
+            ok = run(
+                maps:get(make, Config),
+                MakeVariables ++ ["-j" ++ Jobs] ++ PgoMakeOptions ++ MakeOptions ++ ["all_bootstraps"],
+                Source,
+                RuntimeBuildEnvironment
+            )
+    end,
+    FinalBuildTargets = case CrossCompiling of
+        true -> ["depend", "erl_interface", "emulator", "erts", "libs", "start_scripts", "check_dev_rt_dep"];
+        false -> []
+    end,
     ok = run(
         maps:get(make, Config),
-        MakeVariables ++ ["-j" ++ Jobs] ++ PgoMakeOptions ++ MakeOptions ++ ["all_bootstraps"],
+        MakeVariables ++ ["-j" ++ Jobs] ++ PgoMakeOptions ++ MakeOptions ++ FinalBuildTargets,
         Source,
         RuntimeBuildEnvironment
     ),
     ok = run(
         maps:get(make, Config),
-        FinalMakeVariables ++ ["-j" ++ Jobs] ++ PgoMakeOptions ++ MakeOptions,
-        Source,
-        RuntimeBuildEnvironment
-    ),
-    ok = run(
-        maps:get(make, Config),
-        FinalMakeVariables ++ PgoMakeOptions ++ MakeOptions ++ ["install", "DESTDIR=" ++ Output],
+        MakeVariables ++ PgoMakeOptions ++ MakeOptions ++ ["install", "DESTDIR=" ++ Output],
         Source,
         RuntimeBuildEnvironment
     ),
@@ -336,6 +377,28 @@ stage_bootstrap_tools(BootstrapLauncher, BootstrapErtsBin, Work) ->
         )
     end, ["erlc", "escript"]),
     Directory.
+
+bootstrap_make_variables(Env, BootstrapLauncher, BootstrapErtsBin, RuntimeEnvironment) ->
+    Prefix = [Env] ++ [
+        Key ++ "=" ++ maps:get(Key, RuntimeEnvironment)
+        || Key <- lists:sort(maps:keys(RuntimeEnvironment))
+    ],
+    [
+        "ERL=" ++ shell_join(Prefix ++ [BootstrapLauncher, "-boot", "start_clean"]),
+        "ERLC=" ++ shell_join(Prefix ++ [
+            "ERLC_EMULATOR=" ++ BootstrapLauncher,
+            filename:join(BootstrapErtsBin, "erlc")
+        ]) ++
+            " $(ERLC_WFLAGS) $(ERLC_FLAGS)",
+        "ERLC_EMULATOR=" ++ BootstrapLauncher,
+        "ESCRIPT=" ++ shell_join(Prefix ++ [filename:join(BootstrapErtsBin, "escript")])
+    ].
+
+bootstrap_runtime_make_variables(RuntimeEnvironment) ->
+    [
+        Key ++ "=" ++ maps:get(Key, RuntimeEnvironment)
+        || Key <- lists:sort(maps:keys(RuntimeEnvironment))
+    ].
 
 with_external_bootstrap_path(BootstrapTools, Environment) ->
     Existing = maps:get("PATH", Environment, ""),

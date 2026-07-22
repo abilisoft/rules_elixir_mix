@@ -515,6 +515,7 @@ def _otp_source_release_impl(ctx):
         "  output => {}".format(_erl_string(install.path)),
         "  perl => {}".format(_erl_string(ctx.executable.perl.path)),
         "  escript => {}".format(_erl_string(bootstrap_erts_bin + "/escript")),
+        "  env => {}".format(_erl_string(posix_bin + "/env")),
         "  static_crypto_nif => {}".format("true" if ctx.attr.static_crypto_nif else "false"),
         "  source_directories => {}".format(_erl_string(ctx.file.source_directories.path)),
         "  sources => [{}]".format(",\n    ".join(_source_entries(ctx.files.srcs))),
@@ -604,6 +605,9 @@ def _otp_source_release_impl(ctx):
             runtime_wrapped = has_runtime_wrapper,
             runtime_files = runtime_files,
             static_crypto_nif = ctx.attr.static_crypto_nif,
+            target_abi = "gnu" if ctx.attr.libc == "glibc" else "musl",
+            target_arch = "x86_64" if ctx.attr.target_arch == "amd64" else "aarch64",
+            target_os = "linux",
             version_file = version_file,
         ),
     ]

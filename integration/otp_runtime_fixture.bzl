@@ -37,6 +37,9 @@ def _unverified_otp_runtime_fixture_impl(ctx):
             runtime_wrapped = False,
             runtime_files = runtime_files,
             static_crypto_nif = False,
+            target_abi = "gnu",
+            target_arch = "aarch64",
+            target_os = "linux",
             version_file = ctx.file.version_marker,
         ),
     ]

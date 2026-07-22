@@ -20,7 +20,7 @@ your execution platform.
 
 ## 1. Pin the ruleset
 
-The signed [`v0.3.4` GitHub release](https://github.com/abilisoft/rules_elixir_mix/releases/tag/v0.3.4)
+The signed [`v0.3.5` GitHub release](https://github.com/abilisoft/rules_elixir_mix/releases/tag/v0.3.5)
 is intentionally not published to BCR yet. Consume it through the full,
 GitHub-verified commit referenced by that tag:
 
@@ -32,13 +32,13 @@ module(
 
 bazel_dep(
     name = "rules_elixir_mix",
-    version = "0.3.4",
+    version = "0.3.5",
 )
 
 git_override(
     module_name = "rules_elixir_mix",
     remote = "https://github.com/abilisoft/rules_elixir_mix.git",
-    commit = "<full peeled commit ID for v0.3.4>",
+    commit = "<full peeled commit ID for v0.3.5>",
 )
 
 bazel_dep(name = "platforms", version = "1.1.0")
@@ -47,7 +47,7 @@ bazel_dep(name = "platforms", version = "1.1.0")
 Resolve and verify the annotated tag before copying its peeled commit ID:
 
 ```console
-git fetch https://github.com/abilisoft/rules_elixir_mix.git tag v0.3.4
+git fetch https://github.com/abilisoft/rules_elixir_mix.git tag v0.3.5
 git verify-tag FETCH_HEAD
 git rev-parse FETCH_HEAD^{}
 ```
@@ -120,6 +120,7 @@ beam.prebuilt_toolchain(
     otp_sha256 = "<64-hex-sha256>",
     erlexec = "erts-17.0.3/bin/erlexec",
     otp_fully_static = True,
+    libc = "glibc",
     elixir_version = "1.20.2",
     elixir_url = "https://artifacts.example/elixir-1.20.2-otp-29.tar.gz",
     elixir_sha256 = "<64-hex-sha256>",

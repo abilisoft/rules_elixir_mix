@@ -268,6 +268,13 @@ installation, or a shell adapter. Sources, package locks, compiled dependency
 artifacts, OTP/Elixir toolchains, FIPS policy, and provider runtime files are
 all action inputs or configuration, so their changes invalidate the cache.
 
+For a provider-backed runtime, the public executable is the producer's
+declared static launcher. The built escript payload and adjacent runtime
+sidecar are ordinary `DefaultInfo.files` and runfiles; the sidecar supplies the
+complete OTP and opaque SDK environment plus the payload as a fixed declared
+argument. The launcher resolves those paths before the escript changes its
+working directory.
+
 An escript used as a build tool is analyzed in the execution configuration.
 Register an execution platform on which its OTP toolchain resolves; do not
 pretend a target musl ABI is the worker ABI. A fully bundled runtime wrapper

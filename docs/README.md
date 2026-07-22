@@ -10,7 +10,7 @@ checksum-pinned inputs, resolved toolchains, deterministic outputs, and small
 cacheable actions—while Mix remains responsible for Elixir semantics.
 
 > [!IMPORTANT]
-> [`v0.3.4`](https://github.com/abilisoft/rules_elixir_mix/releases/tag/v0.3.4)
+> [`v0.3.5`](https://github.com/abilisoft/rules_elixir_mix/releases/tag/v0.3.5)
 > is a signed GitHub release for direct commit pinning. It is not published to
 > the Bazel Central Registry, and this project has not published an official
 > runtime archive set. Bring checksum-pinned OTP and Elixir archives. CI proves
@@ -64,7 +64,7 @@ the other.
 | Deterministic source-runtime archive production | Implemented and analysis tested; real crypto-backed publication matrix pending |
 | Mix and Rebar dependency import from `mix.lock` | Integration tested |
 | Lock-owned Hex asset projection | Integration tested with a non-BEAM consumer |
-| Hermetic Mix escript output used as a Bazel tool | Locally integration tested; complete remote runtime-closure matrix pending |
+| Hermetic Mix escript output used as a Bazel tool | Integration tested, including provider-backed runtime wrapping |
 | Compile/type/runtime dependency separation | Analysis and Dialyzer tested |
 | ExUnit sharding, EUnit, Common Test | Integration tested |
 | Phoenix, LiveView, assets, releases | Integration tested |
@@ -75,7 +75,8 @@ the other.
 | `mix_local` warm-cache workflow | Integration tested |
 | Phoenix server and ElixirLS local entry points | Analysis tested |
 | Static and provider-backed generic FIPS contracts | A downstream Phoenix/LiveView app builds, tests, releases, and boots on AMD64 and ARM64 against the normalized `rules_fips` SDK |
-| macOS, Windows, cross-built ERTS/NIFs | Not claimed |
+| AMD64 GNU execution cross-building Arm64 musl ERTS | Required source-toolchain CI |
+| macOS, Windows, other cross-built ERTS/NIF combinations | Not claimed |
 | Official downloadable runtime matrix | Not published yet |
 
 “Implemented” does not mean every producer combination is certified. A crypto
