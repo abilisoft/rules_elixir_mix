@@ -86,7 +86,7 @@ OtpCryptoSdkInfo = provider(
 )
 
 _EXECUTION_ROOT_MARKER = "/proc/self/cwd/"
-_RUNTIME_PATH_EVAL = """
+_RUNTIME_PATH_EVAL = " ".join([line.strip() for line in """
 {ok,Cwd}=file:get_cwd(),
 Marker="/proc/self/"++"cwd/",
 Resolve=fun(P)->
@@ -117,7 +117,7 @@ case os:getenv("RULES_ELIXIR_MIX_ERTS_PATH") of false->ok;ErtsPath->true=os:pute
 lists:foreach(fun(Key)->case os:getenv(Key) of false->ok;Value->true=os:putenv(Key,string:join([Resolve(Path)||Path<-string:tokens(Value,":")],":")) end end,["ERL_LIBS","PATH"]),
 true=code:set_path([Resolve(Path)||Path<-code:get_path()]),
 ok.
-"""
+""".split("\n")])
 
 def execution_root_path(path):
     """Return an absolute-at-launch path without embedding Bazel's execroot."""

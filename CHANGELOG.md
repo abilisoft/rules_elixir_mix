@@ -45,6 +45,9 @@ Bazel Central Registry.
   OTP/Elixir runtime tuple, so `mix_escript` tools transitioned into the
   execution configuration resolve without claiming the produced musl ABI or
   relying on execution-platform ordering.
+- Runtime path normalization uses a deterministic single-line `ERL_AFLAGS`
+  expression, allowing provider-backed escript launchers to retain the strict
+  newline-free sidecar format.
 
 ## 0.3.4 - 2026-07-22
 
