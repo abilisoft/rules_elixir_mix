@@ -49,8 +49,8 @@ Bazel Central Registry.
   closed build `PATH`. The source driver now rejects zero or multiple declared
   `erl` candidates before upstream compilation begins.
 - The cross-toolchain gate executes its AMD64 bootstrap smoke test under both
-  `linux-sandbox` and `processwrapper-sandbox` before the remote ARM64 musl
-  source build.
+  Bazel's Linux `sandboxed` strategy and the explicit
+  `processwrapper-sandbox` strategy before the remote ARM64 musl source build.
 - Source integration reuses each GNU glibc platform as both its native target
   and execution platform. `mix_escript` tools resolve the matching runtime
   without claiming the produced musl ABI, relying on platform ordering, or

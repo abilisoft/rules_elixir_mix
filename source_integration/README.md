@@ -33,6 +33,7 @@ with their own integrity-pinned artifact URL.
 
 The AMD64-to-Arm64 cross gate first runs the cross toolchain's declared AMD64
 bootstrap smoke target locally under both `linux-sandbox` and
-`processwrapper-sandbox`. It then performs the full ARM64 musl source build;
+`processwrapper-sandbox` (using Bazel's portable `sandboxed` strategy name for
+the Linux sandbox). It then performs the full ARM64 musl source build;
 recursive host-BEAM compilation remains bound to the GNU execution runtime and
 the ARM64 toolchain produces target artifacts only.

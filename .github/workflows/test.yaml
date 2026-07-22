@@ -312,7 +312,7 @@ jobs:
           bazelisk-cache: true
           disk-cache: true
           repository-cache: true
-      - name: Verify the AMD64 bootstrap under linux-sandbox
+      - name: Verify the AMD64 bootstrap under the Linux sandbox
         working-directory: source_integration
         run: >-
           bazel test
@@ -322,7 +322,7 @@ jobs:
           --modify_execution_info='^TestRunner$=+no-remote-exec'
           --nocache_test_results
           --remote_header=x-buildbuddy-api-key="${BUILDBUDDY_ORG_API_KEY}"
-          --strategy=TestRunner=linux-sandbox
+          --strategy=TestRunner=sandboxed
           @elixir_config//catalog_source_cross_arm64:bootstrap_smoke_test
       - name: Verify the AMD64 bootstrap under processwrapper-sandbox
         working-directory: source_integration
