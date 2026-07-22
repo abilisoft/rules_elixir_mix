@@ -90,11 +90,12 @@ driver binds `ERL`, `ERLC`, `ERLC_EMULATOR`, `ESCRIPT`, and
 `ESCRIPT_EMULATOR` to that declared bootstrap runtime and skips OTP's native
 `bootstrap_setup`/`all_bootstraps` graph, whose generated `bootstrap/bin/erl`
 is a target executable. Make-owned target runtime variables do not cross into
-bare build-machine tool invocations; the bootstrap VM receives its declared
-runtime environment through `ERL_AFLAGS`. The ordinary cross-build Make graph
-therefore uses the declared build VM for BEAM compilation while producing
-target ERTS artifacts. No target emulator, host OTP, or distro tool is
-discovered.
+bare build-machine tool invocations. The declared `env` and Bash tools restore
+bootstrap values at the recipe boundary without changing Make's target paths,
+and the bootstrap VM receives the same environment through `ERL_AFLAGS`. The
+ordinary cross-build Make graph therefore uses the declared build VM for BEAM
+compilation while producing target ERTS artifacts. No target emulator, host
+OTP, or distro tool is discovered.
 
 Another Bazel rule may own the complete bootstrap runtime instead of an HTTP
 archive:

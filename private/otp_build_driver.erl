@@ -109,7 +109,8 @@ main([ConfigPath]) ->
     %% these names for target outputs, so importing the bootstrap values would
     %% make bare build-machine tools inherit the target runtime after Make
     %% reassigns them. Keep the Make-owned names out of that boundary. The
-    %% bootstrap VM receives its declared values through ERL_AFLAGS -env.
+    %% declared recipe shell restores them only for child processes, and the
+    %% bootstrap VM also receives them through ERL_AFLAGS -env.
     ExternalBootstrapEnvironment = ExternalBootstrapExecutionEnvironment#{
         "BINDIR" => false,
         "EMU" => false,
@@ -125,7 +126,14 @@ main([ConfigPath]) ->
         ExternalBootstrapExecutionEnvironment
     ),
     Jobs = integer_to_list(maps:get(jobs, Config)),
-    MakeShell = "SHELL=" ++ maps:get("SHELL", MakeEnvironment),
+    MakeShellVariables = case CrossCompiling of
+        true -> bootstrap_make_shell_variables(
+            absolute(maps:get(env, Config)),
+            maps:get("SHELL", MakeEnvironment),
+            BootstrapRuntimeEnvironment
+        );
+        false -> ["SHELL=" ++ maps:get("SHELL", MakeEnvironment)]
+    end,
     MakeDeterministic = "ERL_DETERMINISTIC=yes",
     MakePath = "PATH=" ++ maps:get("PATH", MakeEnvironment0),
     MakeTarget = "TARGET=" ++ otp_target(Source),
@@ -145,8 +153,7 @@ main([ConfigPath]) ->
         BootstrapErtsBin,
         BootstrapRuntimeEnvironment
     ),
-    MakeVariables0 = [
-        MakeShell,
+    MakeVariables0 = MakeShellVariables ++ [
         MakeDeterministic,
         MakeArFlags,
         MakeExport,
@@ -393,6 +400,17 @@ bootstrap_make_variables(Env, BootstrapLauncher, BootstrapErtsBin, RuntimeEnviro
             " $(ERLC_WFLAGS) $(ERLC_FLAGS)",
         "ERLC_EMULATOR=" ++ BootstrapLauncher,
         "ESCRIPT=" ++ shell_join(Prefix ++ [filename:join(BootstrapErtsBin, "escript")])
+    ].
+
+bootstrap_make_shell_variables(Env, Bash, RuntimeEnvironment) ->
+    RuntimeKeys = ["BINDIR", "EMU", "ERL_ROOTDIR", "PROGNAME", "ROOTDIR", "RULES_ELIXIR_MIX_ERTS_PATH"],
+    RuntimeAssignments = [
+        Key ++ "=" ++ maps:get(Key, RuntimeEnvironment)
+        || Key <- RuntimeKeys
+    ],
+    [
+        "SHELL=" ++ Env,
+        ".SHELLFLAGS=" ++ shell_join(RuntimeAssignments ++ [Bash, "-c"])
     ].
 
 with_external_bootstrap_path(BootstrapTools, Environment) ->
