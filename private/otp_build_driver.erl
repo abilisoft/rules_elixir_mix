@@ -98,18 +98,28 @@ main([ConfigPath]) ->
     %% runtime need not package OTP's bin/erl shell launcher, and a source-built
     %% output from this rule can therefore bootstrap the next OTP release.
     ExternalBootstrapEnvironment0 = maps:merge(MakeEnvironment0, BootstrapRuntimeEnvironment),
-    ExternalBootstrapEnvironment = ExternalBootstrapEnvironment0#{
+    ExternalBootstrapExecutionEnvironment = ExternalBootstrapEnvironment0#{
         "ERLC_EMULATOR" => BootstrapLauncher,
+        "ESCRIPT_EMULATOR" => BootstrapLauncher,
         "RULES_ELIXIR_MIX_BOOTSTRAP_ERLEXEC" => BootstrapErlExec,
         "RULES_ELIXIR_MIX_BOOTSTRAP_ERTS_BIN" => BootstrapErtsBin,
         "RULES_ELIXIR_MIX_BOOTSTRAP_ROOT" => absolute(maps:get(bootstrap_root, Config))
     },
+    %% GNU Make exports variables inherited from its environment. OTP reuses
+    %% these names for target outputs, so importing the bootstrap values would
+    %% make bare build-machine tools inherit the target runtime after Make
+    %% reassigns them. Keep the Make-owned names out of that boundary. The
+    %% bootstrap VM receives its declared values through ERL_AFLAGS -env.
+    ExternalBootstrapEnvironment = maps:without(
+        ["BINDIR", "EMU", "ERL_ROOTDIR", "PROGNAME", "ROOTDIR"],
+        ExternalBootstrapExecutionEnvironment
+    ),
     true = filelib:is_file(filename:join(BootstrapErtsBin, "beam.smp")),
     ok = run(
         BootstrapLauncher,
         ["-noshell", "-eval", "halt()."],
         Work,
-        ExternalBootstrapEnvironment
+        ExternalBootstrapExecutionEnvironment
     ),
     Jobs = integer_to_list(maps:get(jobs, Config)),
     MakeShell = "SHELL=" ++ maps:get("SHELL", MakeEnvironment),

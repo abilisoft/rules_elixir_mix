@@ -23,8 +23,9 @@ Bazel Central Registry.
 ### Fixed
 
 - ARM64 OTP cross-builds keep every BEAM compilation step on the declared
-  build-machine bootstrap VM. They no longer enter OTP's native secondary
-  bootstrap through the target `erlexec`.
+  build-machine bootstrap VM, including upstream rules that invoke bare
+  `escript`. They no longer enter OTP's native secondary bootstrap through the
+  target runtime paths.
 - RustlerPrecompiled receives `TARGET_ARCH`, `TARGET_OS`, `TARGET_ABI`, and
   `TARGET_VENDOR` from the Bazel target platform before selecting its locked
   archive.

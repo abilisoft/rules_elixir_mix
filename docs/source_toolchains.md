@@ -86,11 +86,15 @@ OTP port programs, and loadable NIFs have independent native dependencies.
 For a cross-build, set `cross_compile = True`, give
 `bootstrap_exec_compatible_with` the build-machine OS/CPU constraints, and put
 the produced CPU/libc constraints only in `target_compatible_with`. The source
-driver keeps `ERLC_EMULATOR` bound to that declared bootstrap runtime and skips
-OTP's native `bootstrap_setup`/`all_bootstraps` graph, whose generated
-`bootstrap/bin/erl` is a target executable. The ordinary cross-build Make graph
-then uses the declared build VM for BEAM compilation while producing target
-ERTS artifacts. No target emulator, host OTP, or distro tool is discovered.
+driver binds `ERL`, `ERLC`, `ERLC_EMULATOR`, `ESCRIPT`, and
+`ESCRIPT_EMULATOR` to that declared bootstrap runtime and skips OTP's native
+`bootstrap_setup`/`all_bootstraps` graph, whose generated `bootstrap/bin/erl`
+is a target executable. Make-owned target runtime variables do not cross into
+bare build-machine tool invocations; the bootstrap VM receives its declared
+runtime environment through `ERL_AFLAGS`. The ordinary cross-build Make graph
+therefore uses the declared build VM for BEAM compilation while producing
+target ERTS artifacts. No target emulator, host OTP, or distro tool is
+discovered.
 
 Another Bazel rule may own the complete bootstrap runtime instead of an HTTP
 archive:

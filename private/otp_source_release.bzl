@@ -460,7 +460,12 @@ def _otp_source_release_impl(ctx):
     bootstrap = ctx.attr.bootstrap_otp[OtpInfo]
     bootstrap_launcher = execution_erlexec_file(bootstrap)
     bootstrap_environment = otp_runtime_env(bootstrap)
-    bootstrap_environment["ERL_AFLAGS"] = erl_env_flags(otp_runtime_erl_args(bootstrap))
+    bootstrap_vm_environment_args = []
+    for key in ["BINDIR", "EMU", "ERL_ROOTDIR", "PROGNAME", "ROOTDIR", "RULES_ELIXIR_MIX_ERTS_PATH"]:
+        bootstrap_vm_environment_args.extend(["-env", key, bootstrap_environment[key]])
+    bootstrap_environment["ERL_AFLAGS"] = erl_env_flags(
+        otp_runtime_erl_args(bootstrap) + bootstrap_vm_environment_args,
+    )
     bootstrap_environment_term = "#{{{}}}".format(", ".join([
         "{} => {}".format(_erl_string(key), _erl_string(bootstrap_environment[key]))
         for key in sorted(bootstrap_environment.keys())
