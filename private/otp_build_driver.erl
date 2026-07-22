@@ -795,7 +795,25 @@ link_erts_bin(Source, Destination, InstallRoot, Wrapper0, ExecutionRoot) ->
                 end,
                 PublicChildren
             ),
+            ok = link_real_alias(
+                Destination,
+                RelativeSource,
+                PublicChildren,
+                RealChildren,
+                "escript"
+            ),
             ok = link_erl_alias(Destination, PublicChildren, Launcher)
+    end.
+
+link_real_alias(Destination, RelativeSource, PublicChildren, RealChildren, Name) ->
+    case {lists:member(Name, PublicChildren), lists:member(Name, RealChildren)} of
+        {true, false} ->
+            file:make_symlink(
+                filename:join(RelativeSource, Name),
+                filename:join(Destination, ".real-" ++ Name)
+            );
+        _ ->
+            ok
     end.
 
 link_erl_alias(Destination, Children, Wrapper) ->

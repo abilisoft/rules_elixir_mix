@@ -1,4 +1,4 @@
 import %workspace%/../.bazelrc
 
 build --platforms=//:source_target_x86_64
-build --extra_execution_platforms=//:source_execution_x86_64
+build --extra_execution_platforms=//:source_target_glibc_x86_64

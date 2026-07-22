@@ -41,13 +41,16 @@ Bazel Central Registry.
 - Elixir source builds use the declared OTP execution overlay's single public
   `erl` directly; they no longer add a duplicate private `erl` symlink to the
   closed build `PATH`.
-- Source integration execution platforms advertise the matching GNU
-  OTP/Elixir runtime tuple, so `mix_escript` tools transitioned into the
-  execution configuration resolve without claiming the produced musl ABI or
-  relying on execution-platform ordering.
+- Source integration reuses each GNU glibc platform as both its native target
+  and execution platform. `mix_escript` tools resolve the matching runtime
+  without claiming the produced musl ABI, relying on platform ordering, or
+  rebuilding an identical source toolchain under a second platform label.
 - Runtime path normalization uses a deterministic single-line `ERL_AFLAGS`
   expression, allowing provider-backed escript launchers to retain the strict
   newline-free sidecar format.
+- Source OTP execution overlays always expose the real `escript` frontend at a
+  stable declared path, whether or not that executable itself required the
+  SDK runtime wrapper.
 
 ## 0.3.4 - 2026-07-22
 

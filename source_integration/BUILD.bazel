@@ -46,40 +46,6 @@ otp_prebuilt_release(
 rules_fips_crypto_sdk(name = "openssl_fips_crypto_sdk")
 
 platform(
-    name = "source_execution_x86_64",
-    constraint_values = [
-        "@rules_fips//fips/platforms:glibc_2_35",
-        "@rules_fips//fips/platforms:openssl_fips_glibc_amd64",
-        "@elixir_config//:runtime_catalog_source_glibc_x86_64",
-        "@platforms//cpu:x86_64",
-        "@platforms//os:linux",
-    ],
-    exec_properties = {
-        "Arch": "amd64",
-        "EstimatedCPU": "4",
-        "EstimatedMemory": "8GB",
-        "OSFamily": "linux",
-    },
-)
-
-platform(
-    name = "source_execution_arm64",
-    constraint_values = [
-        "@rules_fips//fips/platforms:glibc_2_35",
-        "@rules_fips//fips/platforms:openssl_fips_glibc_arm64",
-        "@elixir_config//:runtime_catalog_source_glibc_arm64",
-        "@platforms//cpu:arm64",
-        "@platforms//os:linux",
-    ],
-    exec_properties = {
-        "Arch": "arm64",
-        "EstimatedCPU": "4",
-        "EstimatedMemory": "8GB",
-        "OSFamily": "linux",
-    },
-)
-
-platform(
     name = "source_target_x86_64",
     constraint_values = [
         "@rules_fips//fips/platforms:musl",
@@ -121,6 +87,12 @@ platform(
         "@platforms//cpu:x86_64",
         "@platforms//os:linux",
     ],
+    exec_properties = {
+        "Arch": "amd64",
+        "EstimatedCPU": "4",
+        "EstimatedMemory": "8GB",
+        "OSFamily": "linux",
+    },
 )
 
 platform(
@@ -132,6 +104,12 @@ platform(
         "@platforms//cpu:arm64",
         "@platforms//os:linux",
     ],
+    exec_properties = {
+        "Arch": "arm64",
+        "EstimatedCPU": "4",
+        "EstimatedMemory": "8GB",
+        "OSFamily": "linux",
+    },
 )
 
 config_setting(

@@ -19,9 +19,10 @@ The targets prove distinct boundaries:
   the execution configuration and runs it as a declared code-generation tool.
 
 CI executes the runtime targets and escript tool natively on AMD64 and Arm64,
-then repeats them to require reusable Bazel cache entries. Each GNU execution
-platform advertises the matching source-built GNU runtime tuple for tools
-transitioned into the execution configuration; the produced musl tuple remains
-a target-only constraint. The bootstrap OTP archive is a declared,
-checksum-verified input; consumers should replace its CI-local URL with their
-own integrity-pinned artifact URL.
+then repeats them to require reusable Bazel cache entries. Each GNU glibc
+platform serves as both its native target and the execution platform for tools
+transitioned into the execution configuration. That keeps one cache identity
+for the source-built GNU runtime; the produced musl tuple remains a target-only
+constraint. The bootstrap OTP archive is a declared, checksum-verified input;
+consumers should replace its CI-local URL with their own integrity-pinned
+artifact URL.
