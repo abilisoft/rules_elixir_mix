@@ -110,10 +110,13 @@ main([ConfigPath]) ->
     %% make bare build-machine tools inherit the target runtime after Make
     %% reassigns them. Keep the Make-owned names out of that boundary. The
     %% bootstrap VM receives its declared values through ERL_AFLAGS -env.
-    ExternalBootstrapEnvironment = maps:without(
-        ["BINDIR", "EMU", "ERL_ROOTDIR", "PROGNAME", "ROOTDIR"],
-        ExternalBootstrapExecutionEnvironment
-    ),
+    ExternalBootstrapEnvironment = ExternalBootstrapExecutionEnvironment#{
+        "BINDIR" => false,
+        "EMU" => false,
+        "ERL_ROOTDIR" => false,
+        "PROGNAME" => false,
+        "ROOTDIR" => false
+    },
     true = filelib:is_file(filename:join(BootstrapErtsBin, "beam.smp")),
     ok = run(
         BootstrapLauncher,
