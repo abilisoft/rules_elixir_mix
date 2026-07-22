@@ -570,7 +570,9 @@ def _otp_source_release_impl(ctx):
     )
 
     runtime_files = depset(
-        direct = [install, erts_bin, exec_erts_bin, erl, version_file],
+        direct = [install, erts_bin, exec_erts_bin, erl, version_file] + (
+            [crypto.sysroot] if crypto and crypto.execution_exec_wrapper else []
+        ),
         transitive = [crypto.exec_files] if crypto else [],
     )
     erlang_home = install.path + "/lib/erlang"

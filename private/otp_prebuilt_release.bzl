@@ -145,7 +145,9 @@ def _otp_prebuilt_release_impl(ctx):
         use_default_shell_env = False,
     )
     runtime_files = depset(
-        direct = ctx.files.srcs + [version_file],
+        direct = ctx.files.srcs + [version_file] + (
+            [crypto.sysroot] if crypto and crypto.execution_exec_wrapper else []
+        ),
         transitive = [crypto.exec_files] if crypto else [],
     )
 

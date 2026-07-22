@@ -96,6 +96,8 @@ def _otp_runtime_closure_analysis_check_impl(ctx):
     paths = [file.path for file in otp.runtime_files.to_list()]
     if not any([path.endswith("/fake_execution_wrapper") for path in paths]):
         fail("provider-backed OTP dropped its execution-wrapper closure: {}".format(paths))
+    if not any([path.endswith("/fake_crypto_sysroot") for path in paths]):
+        fail("provider-backed OTP dropped its execution sysroot: {}".format(paths))
     return []
 
 otp_runtime_closure_analysis_check = rule(
