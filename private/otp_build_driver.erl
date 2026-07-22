@@ -365,9 +365,11 @@ stage_bootstrap_tools(BootstrapLauncher, BootstrapErtsBin, Work) ->
     Directory.
 
 bootstrap_make_variables(Env, BootstrapLauncher, BootstrapErtsBin, RuntimeEnvironment) ->
+    RuntimeKeys = ["BINDIR", "EMU", "ERL_ROOTDIR", "PROGNAME", "ROOTDIR", "RULES_ELIXIR_MIX_ERTS_PATH"],
     Prefix = [Env] ++ [
         Key ++ "=" ++ maps:get(Key, RuntimeEnvironment)
-        || Key <- lists:sort(maps:keys(RuntimeEnvironment))
+        || Key <- RuntimeKeys,
+           maps:is_key(Key, RuntimeEnvironment)
     ],
     [
         "ERL=" ++ shell_join(Prefix ++ [BootstrapLauncher, "-boot", "start_clean"]),
