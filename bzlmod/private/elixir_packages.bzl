@@ -219,9 +219,10 @@ mix_library(
         )
         generated_hubs.append(lock.name)
 
+    direct_repositories = ["hex_pm"] + generated_hubs
     return module_ctx.extension_metadata(
-        root_module_direct_deps = ["hex_pm"] + generated_hubs,
-        root_module_direct_dev_deps = [],
+        root_module_direct_deps = direct_repositories if module_ctx.root_module_has_non_dev_dependency else [],
+        root_module_direct_dev_deps = [] if module_ctx.root_module_has_non_dev_dependency else direct_repositories,
         reproducible = True,
     )
 

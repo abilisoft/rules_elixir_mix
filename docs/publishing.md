@@ -20,7 +20,7 @@ toolchain and platform closure.
 
 ## Current publication state
 
-- [`v0.3.2`](https://github.com/abilisoft/rules_elixir_mix/releases/tag/v0.3.2)
+- [`v0.3.3`](https://github.com/abilisoft/rules_elixir_mix/releases/tag/v0.3.3)
   is the current signed GitHub release. Resolve and verify its peeled commit as
   shown in [Getting started](getting_started.md#1-pin-the-ruleset).
 - The module is not published to BCR. Consumers should use the direct commit
@@ -51,8 +51,8 @@ For each version:
    validation and review.
 
 ```sh
-git tag -s v0.3.2 -m "rules_elixir_mix v0.3.2"
-git push origin v0.3.2
+git tag -s v0.3.3 -m "rules_elixir_mix v0.3.3"
+git push origin v0.3.3
 ```
 
 The workflow rejects lightweight tags, unverified tag signatures, tags outside

@@ -164,6 +164,23 @@ those components. It consumes their Bazel targets while building pristine OTP
 and Elixir sources. This prevents a second, subtly different libc or crypto
 build from appearing here.
 
+### Native runtime shapes
+
+The runtime ABI and linkage shape are independent choices. The rules support
+dynamic glibc, wrapped-dynamic musl, and fully static musl source builds on
+AMD64 and ARM64 when the selected C/C++ toolchain and SDK provide that exact
+contract. A glibc build is constrained by its declared ABI floor, not by a
+Linux distribution name.
+
+Do not infer a fully static VM from `static_crypto_nif = True`. That setting
+embeds OTP's crypto NIF in the emulator, but the emulator may still be a
+wrapped dynamic executable. OpenSSL 3 FIPS needs its declared provider module,
+and Phoenix, LiveView, Rustler, and other packages may load application NIFs;
+those profiles use the wrapped-dynamic contract even when their target libc is
+musl. Set `otp_fully_static = True` only when the whole native runtime and SDK
+are genuinely static and the application does not require loadable NIFs or a
+dynamic crypto provider.
+
 The source rule requires exactly one native-runtime contract. A dynamic SDK
 must provide both target and execution wrappers; after verification, the OTP
 driver replaces every dynamic executable in the installed tree with that

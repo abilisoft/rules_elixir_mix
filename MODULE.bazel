@@ -1,6 +1,6 @@
 module(
     name = "rules_elixir_mix",
-    version = "0.3.2",
+    version = "0.3.3",
     bazel_compatibility = [">=9.2.0"],
 )
 
@@ -18,6 +18,13 @@ bazel_dep(
     name = "rules_cc",
     version = "0.2.22",
 )
+
+elixir_packages = use_extension(
+    "//bzlmod:packages.bzl",
+    "elixir_packages",
+    dev_dependency = True,
+)
+use_repo(elixir_packages, "hex_pm")
 
 register_toolchains(
     "//test:analysis_cc_arm64",
