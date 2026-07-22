@@ -6,14 +6,14 @@ module(
 
 bazel_dep(name = "platforms", version = "1.1.0")
 bazel_dep(name = "rules_elixir_mix", version = "0.3.5")
-bazel_dep(name = "rules_fips", version = "0.3.5")
+bazel_dep(name = "rules_fips", version = "0.3.6")
 
 # Direct, checksum-verified pin until rules_fips is published to BCR.
 archive_override(
     module_name = "rules_fips",
-    integrity = "sha256-dqFd50UpEe68OQ7ksDFMTXGpZ5cVFO4PCE5vm1DuFlk=",
-    strip_prefix = "rules_fips-823311e8d7ac8e0904bf468529d548c4e8c1d232",
-    urls = ["https://github.com/abilisoft/rules_fips/archive/823311e8d7ac8e0904bf468529d548c4e8c1d232.tar.gz"],
+    integrity = "sha256-lCbhjXTOeIhQw5966TIDc/IAQiHgU8wVgICIQza2kK0=",
+    strip_prefix = "rules_fips-ad39a379e47c198b7acdabd985a92d5122f8e222",
+    urls = ["https://github.com/abilisoft/rules_fips/archive/ad39a379e47c198b7acdabd985a92d5122f8e222.tar.gz"],
 )
 
 local_path_override(

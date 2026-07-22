@@ -34,6 +34,10 @@ Bazel Central Registry.
 - Provider-backed `mix_escript` outputs use a cwd-independent shell-free
   launcher with the complete OTP/SDK environment, payload, and adjacent
   runtime sidecar in `DefaultInfo.files` and runfiles.
+- Source-build integration consumes checksum-pinned `rules_fips` v0.3.6, whose
+  launcher lets recursive OTP helpers inherit a complete declared runtime
+  environment without sidecar synthesis, host lookup, or widened `PATH`
+  access.
 
 ## 0.3.4 - 2026-07-22
 
