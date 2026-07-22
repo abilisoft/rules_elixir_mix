@@ -19,8 +19,9 @@ Bazel Central Registry.
 - The Hex package extension now reports generated repositories as development
   dependencies when its root usage is development-only, matching Bazel's
   module-extension metadata contract.
-- The source-build integration now pins `rules_fips` v0.3.3, whose public Rust
-  adapter supplies its own transitive `rules_rust` module dependency.
+- The source-build integration now pins `rules_fips` v0.3.4, whose native SDK
+  paths remain valid across nested build-system directory changes and whose
+  pkg-config metadata is carried as declared toolchain input.
 - The integration lock reflects the canonical metadata emitted by current
   Hex for `ssl_verify_fun` without changing the package version or checksums.
 - Source-toolchain documentation now distinguishes a fully static musl VM
