@@ -29,15 +29,19 @@ def _runfiles_artifact_path(ctx, output, short_path):
         _runfiles_relative_path(ctx, short_path),
     )
 
-def _escript_program(ctx, otp, output):
+def _escript_program_path(otp, runfiles = False):
     executable = ".real-escript" if (
         getattr(otp, "runtime_wrapped", False) or
         getattr(otp, "exec_erts_bin", "")
     ) else "escript"
+    root = otp.erlang_home_short_path if runfiles else otp.erlang_home
+    return path_join(root, "bin", executable)
+
+def _escript_program(ctx, otp, output):
     return _runfiles_artifact_path(
         ctx,
         output,
-        path_join(execution_erts_bin(otp, runfiles = True), executable),
+        _escript_program_path(otp, runfiles = True),
     )
 
 def _wrapper_environment(otp, program, payload):
@@ -174,7 +178,7 @@ def _mix_escript_impl(ctx):
             target_file = sdk.execution_exec_wrapper.executable,
             is_executable = True,
         )
-    wrapper_environment = _wrapper_environment(otp, path_join(execution_erts_bin(otp), ".real-escript"), escript)
+    wrapper_environment = _wrapper_environment(otp, _escript_program_path(otp), escript)
     runtime_environment = None
     runtime_direct = []
     if wrapper_environment:

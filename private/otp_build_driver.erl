@@ -326,6 +326,7 @@ main([ConfigPath]) ->
             ok = artifact_normalizer:wrap_dynamic_executables(RuntimeRoot, RuntimeWrapper),
             ok = artifact_normalizer:assert_wrapped_executables(RuntimeRoot)
     end,
+    ok = ensure_real_frontend(RuntimeRoot, "escript"),
     ok = artifact_normalizer:assert_absent(RuntimeRoot, [Work, ExecutionRoot]),
     ok = link_erts_bin(
         InstalledErtsBin,
@@ -795,25 +796,21 @@ link_erts_bin(Source, Destination, InstallRoot, Wrapper0, ExecutionRoot) ->
                 end,
                 PublicChildren
             ),
-            ok = link_real_alias(
-                Destination,
-                RelativeSource,
-                PublicChildren,
-                RealChildren,
-                "escript"
-            ),
             ok = link_erl_alias(Destination, PublicChildren, Launcher)
     end.
 
-link_real_alias(Destination, RelativeSource, PublicChildren, RealChildren, Name) ->
-    case {lists:member(Name, PublicChildren), lists:member(Name, RealChildren)} of
-        {true, false} ->
-            file:make_symlink(
-                filename:join(RelativeSource, Name),
-                filename:join(Destination, ".real-" ++ Name)
-            );
-        _ ->
-            ok
+ensure_real_frontend(RuntimeRoot, Name) ->
+    Bin = filename:join(RuntimeRoot, "bin"),
+    Frontend = filename:join(Bin, Name),
+    RealFrontend = filename:join(Bin, ".real-" ++ Name),
+    true = filelib:is_file(Frontend),
+    case file:read_link_info(RealFrontend) of
+        {ok, _} ->
+            ok;
+        {error, enoent} ->
+            file:make_symlink(Name, RealFrontend);
+        Error ->
+            erlang:error({inspect_real_frontend, RealFrontend, Error})
     end.
 
 link_erl_alias(Destination, Children, Wrapper) ->

@@ -44,13 +44,13 @@ Bazel Central Registry.
 - Source integration reuses each GNU glibc platform as both its native target
   and execution platform. `mix_escript` tools resolve the matching runtime
   without claiming the produced musl ABI, relying on platform ordering, or
-  rebuilding an identical source toolchain under a second platform label.
+  maintaining a duplicate execution-platform definition.
 - Runtime path normalization uses a deterministic single-line `ERL_AFLAGS`
   expression, allowing provider-backed escript launchers to retain the strict
   newline-free sidecar format.
-- Source OTP execution overlays always expose the real `escript` frontend at a
-  stable declared path, whether or not that executable itself required the
-  SDK runtime wrapper.
+- Source OTP runtimes always expose the real `escript` frontend under the
+  declared Erlang home, whether or not that executable itself required the SDK
+  runtime wrapper.
 
 ## 0.3.4 - 2026-07-22
 
