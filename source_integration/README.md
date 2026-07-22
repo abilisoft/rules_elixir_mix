@@ -15,8 +15,13 @@ The targets prove distinct boundaries:
 - `//:fips_runtime` verifies the generic OTP FIPS runtime contract.
 - `//:release_test` assembles a production release, starts its Bandit endpoint,
   verifies packaged crypto activation, and boots without ambient crypto state.
+- `//:source_escript_codegen` builds the application as an offline escript in
+  the execution configuration and runs it as a declared code-generation tool.
 
-CI executes all three targets natively on AMD64 and Arm64, then repeats them to
-require reusable Bazel cache entries. The bootstrap OTP archive is a declared,
+CI executes the runtime targets and escript tool natively on AMD64 and Arm64,
+then repeats them to require reusable Bazel cache entries. Each GNU execution
+platform advertises the matching source-built GNU runtime tuple for tools
+transitioned into the execution configuration; the produced musl tuple remains
+a target-only constraint. The bootstrap OTP archive is a declared,
 checksum-verified input; consumers should replace its CI-local URL with their
 own integrity-pinned artifact URL.

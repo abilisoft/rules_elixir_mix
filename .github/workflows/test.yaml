@@ -196,22 +196,22 @@ jobs:
           - arch: x86_64
             libc: musl
             runner: ubuntu-24.04
-            platform_flags: --platforms=//:source_target_x86_64 --extra_execution_platforms=//:source_execution_x86_64,//:source_escript_execution_x86_64
+            platform_flags: --platforms=//:source_target_x86_64 --extra_execution_platforms=//:source_execution_x86_64
             toolchain_name: catalog_source_x86_64
           - arch: arm64
             libc: musl
             runner: ubuntu-24.04-arm
-            platform_flags: --platforms=//:source_target_arm64 --extra_execution_platforms=//:source_execution_arm64,//:source_escript_execution_arm64
+            platform_flags: --platforms=//:source_target_arm64 --extra_execution_platforms=//:source_execution_arm64
             toolchain_name: catalog_source_arm64
           - arch: x86_64
             libc: glibc
             runner: ubuntu-24.04
-            platform_flags: --platforms=//:source_target_glibc_x86_64 --extra_execution_platforms=//:source_execution_x86_64,//:source_escript_execution_x86_64
+            platform_flags: --platforms=//:source_target_glibc_x86_64 --extra_execution_platforms=//:source_execution_x86_64
             toolchain_name: catalog_source_glibc_x86_64
           - arch: arm64
             libc: glibc
             runner: ubuntu-24.04-arm
-            platform_flags: --platforms=//:source_target_glibc_arm64 --extra_execution_platforms=//:source_execution_arm64,//:source_escript_execution_arm64
+            platform_flags: --platforms=//:source_target_glibc_arm64 --extra_execution_platforms=//:source_execution_arm64
             toolchain_name: catalog_source_glibc_arm64
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 180

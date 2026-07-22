@@ -41,6 +41,10 @@ Bazel Central Registry.
 - Elixir source builds use the declared OTP execution overlay's single public
   `erl` directly; they no longer add a duplicate private `erl` symlink to the
   closed build `PATH`.
+- Source integration execution platforms advertise the matching GNU
+  OTP/Elixir runtime tuple, so `mix_escript` tools transitioned into the
+  execution configuration resolve without claiming the produced musl ABI or
+  relying on execution-platform ordering.
 
 ## 0.3.4 - 2026-07-22
 
