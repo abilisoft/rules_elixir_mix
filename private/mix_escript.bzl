@@ -72,13 +72,16 @@ def _wrapper_environment(ctx, otp, output, program, payload):
     })
     environment.update({
         "ERL_AFLAGS": erl_env_flags(runtime_path_erl_args() + _boot_args(ctx, otp, output) + ["+fnu"]),
+        "ESCRIPT_EMULATOR": path_join(bindir, "erl"),
         "PROGNAME": "escript",
+        "RULES_FIPS_RUNTIME_ARGV0": "escript",
         "RULES_FIPS_RUNTIME_FIXED_ARG_0": _runfiles_execution_path(ctx, output, payload.short_path),
         "RULES_FIPS_RUNTIME_FIXED_ARG_COUNT": "1",
         "RULES_FIPS_RUNTIME_PATH_ENVIRONMENT": ",".join(sorted(
             sdk.runtime_environment.keys() + [
                 "BINDIR",
                 "ERL_ROOTDIR",
+                "ESCRIPT_EMULATOR",
                 "ROOTDIR",
                 "RULES_ELIXIR_MIX_ERTS_PATH",
             ],

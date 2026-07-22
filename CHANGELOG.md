@@ -39,11 +39,12 @@ Bazel Central Registry.
 - Provider-backed `mix_escript` outputs use a cwd-independent shell-free
   launcher with the complete OTP/SDK environment, payload, and adjacent
   runtime sidecar in `DefaultInfo.files` and runfiles.
-- Source-build integration consumes checksum-pinned `rules_fips` v0.3.7, whose
-  launcher lets recursive OTP helpers inherit a complete declared runtime
-  environment without sidecar synthesis, host lookup, or widened `PATH`
-  access, and whose normalized SDK also publishes a complete runnable OpenSSL
-  tool without shifting crypto ownership into these rules.
+- Source-build integration consumes checksum-pinned `rules_fips` v0.3.8. Its
+  launcher keeps fixed arguments and explicit process names scoped to one
+  invocation, so OTP's declared `escript` frontend can re-enter the wrapped
+  emulator without duplicated arguments, host lookup, or widened `PATH`
+  access. The normalized SDK also publishes a complete runnable OpenSSL tool
+  without shifting crypto ownership into these rules.
 - Elixir source builds use the declared OTP execution overlay's single public
   `erl` directly; they no longer add a duplicate private `erl` symlink to the
   closed build `PATH`. The source driver now rejects zero or multiple declared
