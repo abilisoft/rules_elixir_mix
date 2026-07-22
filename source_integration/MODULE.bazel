@@ -11,9 +11,9 @@ bazel_dep(name = "rules_fips", version = "0.3.8")
 # Direct, checksum-verified pin until rules_fips is published to BCR.
 archive_override(
     module_name = "rules_fips",
-    integrity = "sha256-ZKgft/0fjPxbD83XhPOq763c+LiGawnvt4EC232ZsmU=",
-    strip_prefix = "rules_fips-79a91a5e3072f19dbe27cfe2fdc715d9c1e87d1f",
-    urls = ["https://github.com/abilisoft/rules_fips/archive/79a91a5e3072f19dbe27cfe2fdc715d9c1e87d1f.tar.gz"],
+    integrity = "sha256-ZSLBXjJ5omq+G+biaMEL+X0S5DjxJorPf9TYNA72gG8=",
+    strip_prefix = "rules_fips-38a7fae90b4ac6ccf7c5833e319a237667d20739",
+    urls = ["https://github.com/abilisoft/rules_fips/archive/38a7fae90b4ac6ccf7c5833e319a237667d20739.tar.gz"],
 )
 
 local_path_override(
