@@ -22,6 +22,9 @@ Bazel Central Registry.
 - The source-build integration now pins `rules_fips` v0.3.4, whose native SDK
   paths remain valid across nested build-system directory changes and whose
   pkg-config metadata is carried as declared toolchain input.
+- OTP source builds preserve compiler-driver linker selectors such as
+  `-fuse-ld=lld`; only linker values containing a declared path are rebased to
+  the action execution root.
 - The integration lock reflects the canonical metadata emitted by current
   Hex for `ssl_verify_fun` without changing the package version or checksums.
 - Source-toolchain documentation now distinguishes a fully static musl VM

@@ -480,11 +480,11 @@ normalize_flags([Flag | Rest], ExecutionRoot) ->
     [normalize_flag(Flag, ExecutionRoot) | normalize_flags(Rest, ExecutionRoot)].
 
 normalize_flag(Flag, ExecutionRoot) ->
+    LinkerSelector = "-fuse-ld=",
     Prefixes = [
         "--sysroot=",
         "--gcc-toolchain=",
         "-resource-dir=",
-        "-fuse-ld=",
         "-Wl,--dynamic-linker=",
         "-Wl,-rpath,",
         "-isystem",
@@ -492,7 +492,16 @@ normalize_flag(Flag, ExecutionRoot) ->
         "-L",
         "-B"
     ],
-    normalize_prefixed_flag(Flag, Prefixes, ExecutionRoot).
+    case lists:prefix(LinkerSelector, Flag) andalso length(Flag) > length(LinkerSelector) of
+        true ->
+            Linker = lists:nthtail(length(LinkerSelector), Flag),
+            case lists:member($/, Linker) of
+                true -> LinkerSelector ++ absolute_build_path(Linker, ExecutionRoot);
+                false -> Flag
+            end;
+        false ->
+            normalize_prefixed_flag(Flag, Prefixes, ExecutionRoot)
+    end.
 
 normalize_prefixed_flag(Flag, [], ExecutionRoot) ->
     expand_runtime_value(Flag, ExecutionRoot);
