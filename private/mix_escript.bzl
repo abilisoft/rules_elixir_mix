@@ -1,6 +1,6 @@
 """Hermetic, cacheable Mix escript output rule."""
 
-load("//private:beam_info.bzl", "ErlangAppInfo", "crypto_runtime_files", "erl_env_flags", "execution_erts_bin", "execution_root_path", "flat_compile_deps", "flat_deps", "otp_runtime_env", "otp_runtime_erl_args", "path_join")
+load("//private:beam_info.bzl", "ErlangAppInfo", "crypto_runtime_files", "erl_env_flags", "execution_erts_bin", "execution_root_path", "flat_compile_deps", "flat_deps", "otp_runtime_env", "path_join", "runtime_path_erl_args")
 load("//private:mix_execution.bzl", "run_mix_action")
 load("//private:mix_info.bzl", "MixProjectInfo")
 
@@ -29,6 +29,9 @@ def _runfiles_artifact_path(ctx, output, short_path):
         _runfiles_relative_path(ctx, short_path),
     )
 
+def _runfiles_execution_path(ctx, output, short_path):
+    return execution_root_path(_runfiles_artifact_path(ctx, output, short_path))
+
 def _escript_program_path(otp, runfiles = False):
     executable = ".real-escript" if (
         getattr(otp, "runtime_wrapped", False) or
@@ -43,25 +46,34 @@ def _escript_program(ctx, otp, output):
         _escript_program_path(otp, runfiles = True),
     )
 
-def _wrapper_environment(otp, program, payload):
+def _wrapper_environment(ctx, otp, output, program, payload):
     sdk = otp.crypto_sdk
     if not sdk or not sdk.execution_exec_wrapper:
         return {}
-    sysroot = execution_root_path(sdk.sysroot.short_path)
-    activation_root = execution_root_path(sdk.prepared_state.short_path)
+    sysroot = _runfiles_execution_path(ctx, output, sdk.sysroot.short_path)
+    activation_root = _runfiles_execution_path(ctx, output, sdk.prepared_state.short_path)
     environment = {
         key: value.replace("{sysroot}", sysroot).replace("{activation_root}", activation_root)
         for key, value in sdk.runtime_environment.items()
     }
-    environment.update(otp_runtime_env(otp, runfiles = True))
+    otp_environment = otp_runtime_env(otp, runfiles = True)
+    root = _runfiles_execution_path(ctx, output, otp.erlang_home_short_path)
+    bindir = _runfiles_execution_path(ctx, output, execution_erts_bin(otp, runfiles = True))
+    otp_environment.update({
+        "BINDIR": bindir,
+        "ERL_ROOTDIR": root,
+        "ROOTDIR": root,
+        "RULES_ELIXIR_MIX_ERTS_PATH": bindir,
+    })
+    environment.update(otp_environment)
     environment.update({
         key: value.replace("{sysroot}", sysroot).replace("{program}", execution_root_path(program))
         for key, value in sdk.execution_wrapper_environment.items()
     })
     environment.update({
-        "ERL_AFLAGS": erl_env_flags(otp_runtime_erl_args(otp, runfiles = True) + ["+fnu"]),
+        "ERL_AFLAGS": erl_env_flags(runtime_path_erl_args() + _boot_args(ctx, otp, output) + ["+fnu"]),
         "PROGNAME": "escript",
-        "RULES_FIPS_RUNTIME_FIXED_ARG_0": execution_root_path(payload.short_path),
+        "RULES_FIPS_RUNTIME_FIXED_ARG_0": _runfiles_execution_path(ctx, output, payload.short_path),
         "RULES_FIPS_RUNTIME_FIXED_ARG_COUNT": "1",
         "RULES_FIPS_RUNTIME_PATH_ENVIRONMENT": ",".join(sorted(
             sdk.runtime_environment.keys() + [
@@ -185,7 +197,7 @@ def _mix_escript_impl(ctx):
             target_file = sdk.execution_exec_wrapper.executable,
             is_executable = True,
         )
-    wrapper_environment = _wrapper_environment(otp, _escript_program_path(otp, runfiles = True), escript)
+    wrapper_environment = _wrapper_environment(ctx, otp, output, escript_program, escript)
     runtime_environment = None
     runtime_direct = []
     if wrapper_environment:
