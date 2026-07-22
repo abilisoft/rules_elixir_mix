@@ -6,10 +6,8 @@ load(
     "crypto_runtime_files",
     "erl_env_flags",
     "execution_erlexec_file",
-    "fips_erl_args",
     "otp_runtime_env",
     "otp_runtime_erl_args",
-    "prepare_crypto_runtime",
     "test_erl_launcher",
 )
 
@@ -20,13 +18,7 @@ def _otp_runtime_rejection_test_impl(ctx):
     runner = runner_toolchain.otpinfo
     rejected = ctx.attr.otp[OtpInfo]
     rejected_erlexec = execution_erlexec_file(rejected)
-    activation = prepare_crypto_runtime(
-        ctx,
-        runner,
-        ctx.label.name + "_crypto_state",
-        runfiles = True,
-    )
-    args = otp_runtime_erl_args(runner, runfiles = True) + fips_erl_args(runner, runfiles = True) + [
+    args = otp_runtime_erl_args(runner, runfiles = True) + [
         "-noshell",
         "-eval",
         _DRIVER_EVAL,
@@ -36,7 +28,6 @@ def _otp_runtime_rejection_test_impl(ctx):
         ctx.attr.expected_error,
     ]
     environment = otp_runtime_env(runner, runfiles = True)
-    environment.update(activation.environment)
     environment.update({
         "ERL_AFLAGS": erl_env_flags(args),
         "HOME": ".",
@@ -51,7 +42,6 @@ def _otp_runtime_rejection_test_impl(ctx):
             rejected.runtime_files,
             crypto_runtime_files(runner),
             crypto_runtime_files(rejected),
-            activation.files,
         ]),
     )
     return [

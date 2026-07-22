@@ -44,6 +44,7 @@ def _test_result(ctx, expression, names, extra_runfiles = [], plain_args = []):
         toolchain.otpinfo,
         ctx.label.name + "_crypto_state",
         runfiles = True,
+        activate = toolchain.otpinfo.fips == "required",
     )
     apps = flat_runtime_deps(ctx.attr.apps)
     lib_dirs = []
@@ -53,7 +54,10 @@ def _test_result(ctx, expression, names, extra_runfiles = [], plain_args = []):
                 lib_dirs.append(directory)
     args = otp_runtime_erl_args(toolchain.otpinfo, runfiles = True) + [
         "-noshell",
-    ] + fips_erl_args(toolchain.otpinfo, runfiles = True, activate = False) + [
+    ] + fips_erl_args(
+        toolchain.otpinfo,
+        activate = toolchain.otpinfo.fips == "required",
+    ) + [
         "-eval",
         expression,
         "-extra",

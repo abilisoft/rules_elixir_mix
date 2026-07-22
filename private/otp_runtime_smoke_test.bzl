@@ -22,6 +22,7 @@ def _otp_runtime_smoke_test_impl(ctx):
         otp,
         ctx.label.name + "_crypto_state",
         runfiles = True,
+        activate = otp.fips == "required",
     )
     expected_release = otp.version.split(".")[0]
     jit_check = [] if otp.jit == "auto" else [
@@ -42,7 +43,7 @@ def _otp_runtime_smoke_test_impl(ctx):
     environment.update({
         "ERL_AFLAGS": erl_env_flags(
             otp_runtime_erl_args(otp, runfiles = True) +
-            fips_erl_args(otp, runfiles = True) +
+            fips_erl_args(otp, activate = otp.fips == "required") +
             ["-noshell", "-eval", expression],
         ),
         "HOME": ".",

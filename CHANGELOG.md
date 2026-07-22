@@ -9,6 +9,23 @@ All notable user-facing changes are recorded here. Signed Git tags and GitHub
 releases identify the exact source; this project is not yet published to the
 Bazel Central Registry.
 
+## 0.3.4 - 2026-07-22
+
+### Added
+
+- `mix_format`, a source-only writable formatter that uses the selected
+  OTP/Elixir toolchain without depending on or compiling a `mix_library`.
+- Target-configured `rustler_precompiled_archive` selection and offline cache
+  staging for checksum-owned RustlerPrecompiled archives, including generated
+  Hex dependency targets.
+
+### Changed
+
+- FIPS-capable OTP/OpenSSL toolchains no longer activate FIPS during
+  application, Rebar, protocol, Dialyzer, escript, bootstrap, or writable local
+  compilation workflows. OTP/runtime tests and FIPS-required releases activate
+  and validate FIPS explicitly.
+
 ## 0.3.3 - 2026-07-22
 
 ### Changed

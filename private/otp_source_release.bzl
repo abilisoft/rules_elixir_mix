@@ -3,7 +3,7 @@
 load("@rules_cc//cc:action_names.bzl", "CPP_COMPILE_ACTION_NAME", "CPP_LINK_DYNAMIC_LIBRARY_ACTION_NAME", "CPP_LINK_EXECUTABLE_ACTION_NAME", "CPP_LINK_STATIC_LIBRARY_ACTION_NAME", "C_COMPILE_ACTION_NAME", "STRIP_ACTION_NAME")
 load("@rules_cc//cc:find_cc_toolchain.bzl", "CC_TOOLCHAIN_TYPE", "use_cc_toolchain")
 load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
-load("//private:beam_info.bzl", "OtpInfo", "erl_env_flags", "execution_erlexec", "execution_erlexec_file", "execution_erts_bin", "fips_erl_args", "otp_runtime_env", "otp_runtime_erl_args")
+load("//private:beam_info.bzl", "OtpInfo", "erl_env_flags", "execution_erlexec", "execution_erlexec_file", "execution_erts_bin", "otp_runtime_env", "otp_runtime_erl_args")
 load("//private:otp_crypto_sdk.bzl", "crypto_sdk_info")
 load("//private:runtime_archive_info.bzl", "BeamRuntimeSourceInfo")
 
@@ -320,7 +320,7 @@ def _otp_source_release_impl(ctx):
         fail("static_crypto_nif requires a crypto sysroot")
     if ctx.attr.fips == "required":
         if int(ctx.attr.version.split(".")[0]) < 29:
-            fail("FIPS-required statically linked crypto requires OTP 29 or newer")
+            fail("FIPS-capable statically linked crypto requires OTP 29 or newer")
         if not crypto:
             fail("FIPS-required OTP requires crypto_sdk")
         if not ctx.attr.static_crypto_nif:
@@ -460,10 +460,7 @@ def _otp_source_release_impl(ctx):
     bootstrap = ctx.attr.bootstrap_otp[OtpInfo]
     bootstrap_launcher = execution_erlexec_file(bootstrap)
     bootstrap_environment = otp_runtime_env(bootstrap)
-    bootstrap_environment["ERL_AFLAGS"] = erl_env_flags(
-        otp_runtime_erl_args(bootstrap) +
-        fips_erl_args(bootstrap, activate = False),
-    )
+    bootstrap_environment["ERL_AFLAGS"] = erl_env_flags(otp_runtime_erl_args(bootstrap))
     bootstrap_environment_term = "#{{{}}}".format(", ".join([
         "{} => {}".format(_erl_string(key), _erl_string(bootstrap_environment[key]))
         for key in sorted(bootstrap_environment.keys())

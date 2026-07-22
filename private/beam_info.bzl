@@ -45,7 +45,7 @@ OtpInfo = provider(
         "exec_erts_bin": "Execution-configured ERTS launcher directory.",
         "exec_erts_bin_short_path": "Runfiles-relative execution-configured ERTS launcher directory.",
         "crypto_sdk": "Normalized OtpCryptoSdkInfo, or None.",
-        "fips": "FIPS policy: disabled or required.",
+        "fips": "FIPS build capability policy: disabled or required.",
         "fully_static": "Whether every native OTP executable is statically linked.",
         "jit": "Runtime emulator policy: auto, disabled, or required.",
         "runtime_wrapped": "Whether every dynamic native executable has an adjacent declared static wrapper.",
@@ -188,8 +188,8 @@ def path_join(*parts):
         result = part.rstrip("/") if not result else result.rstrip("/") + "/" + part.strip("/")
     return result
 
-def fips_erl_args(otp_info, runfiles = False, activate = False):
-    """Return the VM arguments that enable required FIPS mode before boot.
+def fips_erl_args(otp_info, activate):
+    """Return VM arguments only when this invocation explicitly activates FIPS.
 
     Provider activation cannot happen inside this VM: provider-backed SDKs may
     initialize before an Erlang `-eval` runs. Callers
@@ -198,19 +198,18 @@ def fips_erl_args(otp_info, runfiles = False, activate = False):
 
     Args:
       otp_info: Selected OtpInfo provider.
-      runfiles: Retained for call-site readability; the arguments contain no paths.
-      activate: Must remain False. In-VM activation is intentionally rejected.
+      activate: Whether this runtime invocation explicitly requires FIPS mode.
 
     Returns:
-      Erlang command-line arguments for a FIPS-required runtime, or an empty list.
+      Erlang command-line arguments for an explicitly activated runtime, or an empty list.
     """
-    if activate:
-        fail("crypto SDK activation must be prepared before the Erlang VM starts")
-    if runfiles:
-        return ["-crypto", "fips_mode", "true"] if otp_info.fips == "required" else []
-    return ["-crypto", "fips_mode", "true"] if otp_info.fips == "required" else []
+    if not activate:
+        return []
+    if otp_info.fips != "required":
+        fail("FIPS activation requires a FIPS-capable OTP toolchain")
+    return ["-crypto", "fips_mode", "true"]
 
-def prepare_crypto_runtime(_ctx, otp_info, _output_name, runfiles = False):
+def prepare_crypto_runtime(_ctx, otp_info, _output_name, activate, runfiles = False):
     """Use crypto SDK state prepared before an Erlang VM starts.
 
     The normalized SDK rule prepares provider state exactly once per Bazel
@@ -223,10 +222,15 @@ def prepare_crypto_runtime(_ctx, otp_info, _output_name, runfiles = False):
       otp_info: Selected OtpInfo provider.
       _output_name: Retained for call-site compatibility.
       runfiles: Whether returned environment paths target a runfiles tree.
+      activate: Whether this runtime invocation explicitly requires provider activation.
 
     Returns:
       A struct with files and environment fields.
     """
+    if not activate:
+        return struct(environment = {}, files = depset())
+    if otp_info.fips != "required":
+        fail("crypto SDK activation requires a FIPS-capable OTP toolchain")
     sdk = otp_info.crypto_sdk
     if not sdk or not sdk.prepared_state:
         return struct(environment = {}, files = depset())

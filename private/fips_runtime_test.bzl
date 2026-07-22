@@ -8,7 +8,7 @@ def _elixir_fips_runtime_test_impl(ctx):
     toolchain = ctx.toolchains["//:otp_toolchain_type"]
     otp = toolchain.otpinfo
     if otp.fips != "required":
-        fail("elixir_fips_runtime_test requires a toolchain with fips='required'")
+        fail("elixir_fips_runtime_test requires a FIPS-capable toolchain")
     if not otp.static_crypto_nif:
         fail("elixir_fips_runtime_test requires static_crypto_nif=True")
 
@@ -17,10 +17,11 @@ def _elixir_fips_runtime_test_impl(ctx):
         otp,
         ctx.label.name + "_crypto_state",
         runfiles = True,
+        activate = True,
     )
     args = otp_runtime_erl_args(otp, runfiles = True) + [
         "-noshell",
-    ] + fips_erl_args(otp, runfiles = True, activate = False) + [
+    ] + fips_erl_args(otp, activate = True) + [
         "-eval",
         _DRIVER_EVAL,
         "-extra",

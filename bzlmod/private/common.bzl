@@ -41,6 +41,7 @@ mix_library(
     mix_config = ":mix.exs",
     native_build = {native_build},
     precompiled_native_artifacts = {precompiled_native_artifacts_str},
+    rustler_precompiled_artifacts = {rustler_precompiled_artifacts_str},
     # Third-party archives are immutable inputs; do not make consumers patch
     # upstream warnings just to use a package. First-party mix_library targets
     # keep warnings_as_errors enabled by default.
@@ -72,7 +73,7 @@ rebar_library(
 )
 """
 
-def package_build_file_content(app_name, manager, explicit_deps_str, package, repository, sha256, version, compile_deps_str = "[]", native_build = False, precompiled_native_artifacts_str = "[]", precompiled_native_files_str = "[]", testonly_attr = ""):
+def package_build_file_content(app_name, manager, explicit_deps_str, package, repository, sha256, version, compile_deps_str = "[]", native_build = False, precompiled_native_artifacts_str = "[]", precompiled_native_files_str = "[]", rustler_precompiled_artifacts_str = "[]", testonly_attr = ""):
     """Render a generated Hex package BUILD file for its declared manager.
 
     Args:
@@ -87,6 +88,7 @@ def package_build_file_content(app_name, manager, explicit_deps_str, package, re
       native_build: Whether the package may invoke a native source compiler.
       precompiled_native_artifacts_str: Rendered checksum-pinned native archive labels.
       precompiled_native_files_str: Rendered validated native files copied directly into priv.
+      rustler_precompiled_artifacts_str: Rendered target-selected RustlerPrecompiled cache archive labels.
       testonly_attr: Optional generated testonly attribute for Mix packages.
 
     Returns:
@@ -101,6 +103,7 @@ def package_build_file_content(app_name, manager, explicit_deps_str, package, re
             package = repr(package),
             precompiled_native_artifacts_str = precompiled_native_artifacts_str,
             precompiled_native_files_str = precompiled_native_files_str,
+            rustler_precompiled_artifacts_str = rustler_precompiled_artifacts_str,
             repository = repr(repository),
             sha256 = repr(sha256),
             testonly_attr = testonly_attr,

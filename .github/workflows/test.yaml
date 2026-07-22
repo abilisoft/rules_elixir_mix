@@ -76,6 +76,7 @@ jobs:
           //test:eunit_analysis_fixture
           //test:exunit_analysis_fixture
           //test:format_analysis_fixture
+          //test:format_sources_analysis_fixture
           //test:hex_assets_analysis_fixture
           //test:iex_analysis_fixture
           //test:lcov_analysis_fixture
@@ -89,6 +90,8 @@ jobs:
           //test:release_analysis_fixture
           //test:runtime_archive_analysis_fixture
           //test:rustler_nif_analysis_fixture
+          //test:rustler_precompiled_selection_analysis
+          //test:rustler_precompiled_staging_analysis_fixture_compile
           //test:static_crypto_sdk
           //test:toolchain_analysis
           //test:typecheck_analysis_fixture
@@ -174,6 +177,8 @@ jobs:
       - name: Exercise the writable local cache twice
         working-directory: integration
         run: |
+          # shellcheck disable=SC2086
+          bazel run ${BAZEL_REMOTE_FALLBACK} ${BAZEL_PLATFORM_FLAGS} --remote_header=x-buildbuddy-api-key="${BUILDBUDDY_ORG_API_KEY}" //:source_catalog_format_sources
           # shellcheck disable=SC2086
           bazel run ${BAZEL_REMOTE_FALLBACK} ${BAZEL_PLATFORM_FLAGS} --remote_header=x-buildbuddy-api-key="${BUILDBUDDY_ORG_API_KEY}" //:local
           # shellcheck disable=SC2086

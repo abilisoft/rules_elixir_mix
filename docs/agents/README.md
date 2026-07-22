@@ -123,6 +123,10 @@ archive exports the exact native file and its package-relative destination is
 known. A fully static BEAM cannot load application NIFs; use a declared wrapped
 dynamic runtime when Phoenix LiveView, LazyHTML, Rustler, or another package
 loads one.
+For RustlerPrecompiled, select one checksum-pinned archive with
+`rustler_precompiled_archive` in the target configuration and attach it through
+`rustler_precompiled_artifacts`; never let the Mix action download a missing
+platform archive.
 
 ### 5. Model one OTP application per target
 
@@ -175,6 +179,7 @@ Choose only checks the project actually configures:
 | ExUnit | `mix_test` or `mix_ex_unit_test` |
 | EUnit / Common Test | `erlang_eunit_test` / `erlang_common_test` |
 | Formatting | `mix_format_test` |
+| Writable source formatting without compilation | `mix_format` |
 | Elixir 1.20+ compiler type analysis | `mix_typecheck_test` |
 | Native cached Dialyzer | `dialyzer_plt` + `elixir_dialyzer_test` |
 | Dialyxir task | `mix_dialyzer_test` |

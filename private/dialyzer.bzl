@@ -1,6 +1,6 @@
 """Cacheable Dialyzer PLTs and shell-free BEAM analysis tests."""
 
-load("//private:beam_info.bzl", "ErlangAppInfo", "crypto_runtime_files", "erl_env_flags", "execution_erlexec", "execution_erts_bin", "fips_erl_args", "flat_type_deps", "otp_runtime_env", "otp_runtime_erl_args", "path_join", "prepare_crypto_runtime", "test_erl_launcher")
+load("//private:beam_info.bzl", "ErlangAppInfo", "crypto_runtime_files", "erl_env_flags", "execution_erlexec", "execution_erts_bin", "flat_type_deps", "otp_runtime_env", "otp_runtime_erl_args", "path_join", "test_erl_launcher")
 
 DialyzerPltInfo = provider(
     doc = "A cacheable Dialyzer persistent lookup table.",
@@ -192,12 +192,10 @@ def _dialyzer_plt_impl(ctx):
     roots = _dedupe_roots(apps)
     output = ctx.actions.declare_file(ctx.label.name + ".plt")
     toolchain = ctx.toolchains["//:toolchain_type"]
-    activation = prepare_crypto_runtime(ctx, toolchain.otpinfo, ctx.label.name + "_crypto_state")
     args = ctx.actions.args()
     args.add_all([
         "-noshell",
         "+fnu",
-    ] + fips_erl_args(toolchain.otpinfo, activate = False) + [
         "-s",
         "elixir",
         "start_cli",
@@ -210,7 +208,6 @@ def _dialyzer_plt_impl(ctx):
     args.add_all(roots)
 
     environment = otp_runtime_env(toolchain.otpinfo)
-    environment.update(activation.environment)
     environment.update({
         "ERL_LIBS": ":".join([path_join(toolchain.elixirinfo.elixir_home, "lib")] + roots),
         "HOME": output.path + ".state/home",
@@ -228,7 +225,7 @@ def _dialyzer_plt_impl(ctx):
         executable = execution_erlexec(toolchain.otpinfo),
         arguments = [args],
         inputs = depset(
-            transitive = [toolchain.runtime_files, activation.files] + [
+            transitive = [toolchain.runtime_files] + [
                 app[DefaultInfo].files
                 for app in apps
             ],
@@ -275,12 +272,6 @@ def _elixir_dialyzer_test_impl(ctx):
     analysis_roots = _dedupe_roots(analyzed_apps, short_path = True)
     type_roots = _dedupe_roots(type_apps, short_path = True)
     toolchain = ctx.toolchains["//:toolchain_type"]
-    activation = prepare_crypto_runtime(
-        ctx,
-        toolchain.otpinfo,
-        ctx.label.name + "_crypto_state",
-        runfiles = True,
-    )
     plt_info = ctx.attr.plt[DialyzerPltInfo]
     plt = plt_info.file
     if plt_info.otp_version != toolchain.otpinfo.version or plt_info.elixir_version != toolchain.elixirinfo.version:
@@ -302,7 +293,6 @@ def _elixir_dialyzer_test_impl(ctx):
     args = otp_runtime_erl_args(toolchain.otpinfo, runfiles = True) + [
         "-noshell",
         "+fnu",
-    ] + fips_erl_args(toolchain.otpinfo, runfiles = True, activate = False) + [
         "-s",
         "elixir",
         "start_cli",
@@ -313,7 +303,6 @@ def _elixir_dialyzer_test_impl(ctx):
         plt.short_path,
     ] + analysis_roots
     environment = otp_runtime_env(toolchain.otpinfo, runfiles = True)
-    environment.update(activation.environment)
     environment.update({
         "ERL_AFLAGS": erl_env_flags(args),
         "ERL_LIBS": ":".join([path_join(toolchain.elixirinfo.elixir_home_short_path, "lib")] + type_roots),
@@ -330,7 +319,6 @@ def _elixir_dialyzer_test_impl(ctx):
         transitive_files = depset(transitive = [
             toolchain.runtime_files,
             crypto_runtime_files(toolchain.otpinfo),
-            activation.files,
         ]),
     ).merge(ctx.attr.plt[DefaultInfo].default_runfiles)
     for app in type_apps:

@@ -19,6 +19,7 @@ load(
     "mix_deps_update",
     "mix_ecto_test",
     "mix_escript",
+    "mix_format",
     "mix_format_test",
     "mix_iex",
     "mix_lcov_test",
@@ -35,9 +36,10 @@ load(
     "otp_prebuilt_release",
     "otp_toolchain",
     "rustler_nif",
+    "rustler_precompiled_archive",
 )
 load(":analysis_cc_toolchain.bzl", "analysis_cc_toolchain_config")
-load(":analysis_tests.bzl", "fake_directory", "fake_executable", "fake_runtime_source", "generated_file", "mix_lock_analysis_check", "otp_runtime_closure_analysis_check", "toolchain_analysis_check", "version_catalog_analysis_check")
+load(":analysis_tests.bzl", "fake_directory", "fake_executable", "fake_runtime_source", "generated_file", "mix_lock_analysis_check", "otp_runtime_closure_analysis_check", "rustler_precompiled_analysis_check", "toolchain_analysis_check", "version_catalog_analysis_check")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -489,6 +491,43 @@ mix_format_test(
         "test/test_helper.exs",
     ],
     lib = ":analysis_test_lib",
+    tags = ["manual"],
+)
+
+mix_format(
+    name = "format_sources_analysis_fixture",
+    srcs = [
+        "lib/analysis_fixture.ex",
+        "test/analysis_fixture_test.exs",
+    ],
+    formatter_config = ".formatter.exs",
+    mix_config = "mix.exs",
+    tags = ["manual"],
+)
+
+rustler_precompiled_archive(
+    name = "selected_rustler_precompiled_archive",
+    archive = select({
+        "@platforms//cpu:arm64": "test/analysis_fixture_test.exs",
+        "@platforms//cpu:x86_64": "lib/analysis_fixture.ex",
+    }),
+)
+
+rustler_precompiled_analysis_check(
+    name = "rustler_precompiled_selection_analysis",
+    archive = ":selected_rustler_precompiled_archive",
+    expected_basename = select({
+        "@platforms//cpu:arm64": "analysis_fixture_test.exs",
+        "@platforms//cpu:x86_64": "analysis_fixture.ex",
+    }),
+)
+
+mix_library(
+    name = "rustler_precompiled_staging_analysis_fixture",
+    srcs = ["lib/analysis_fixture.ex"],
+    app_name = "analysis_fixture",
+    mix_config = "mix.exs",
+    rustler_precompiled_artifacts = [":selected_rustler_precompiled_archive"],
     tags = ["manual"],
 )
 

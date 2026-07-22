@@ -44,6 +44,8 @@ Important attributes:
   isolated `ELIXIR_MAKE_CACHE_DIR` before compilation.
 - `precompiled_native_files`: exact, checksum-owned native files mapped
   directly to package-relative destinations such as `priv/native.so`.
+- `rustler_precompiled_artifacts`: checksum-owned archives selected in the
+  target configuration and staged in RustlerPrecompiled's offline global cache.
 - `native_build`: opt one application into the selected execution platform's
   registered C/C++ toolchain and declared Bash/Make/Perl/POSIX closure.
 
@@ -126,6 +128,44 @@ matching Bazel C/C++ toolchain must resolve on the same execution platform.
 `rules_fips` may produce that musl/glibc compiler and POSIX closure;
 `rules_elixir_mix` only consumes it. There is no fallback to `/usr/bin`, the
 host `PATH`, a host compiler, or a host crypto library.
+
+RustlerPrecompiled chooses an archive from the target's NIF ABI, CPU, OS, and
+libc tuple. Model that choice with an ordinary target-configured `select()`;
+the exact cache basename must match the package's configured archive URL:
+
+```starlark
+load(
+    "@rules_elixir_mix//:defs.bzl",
+    "rustler_precompiled_archive",
+)
+
+rustler_precompiled_archive(
+    name = "package_nif",
+    archive = select({
+        "//platforms:linux_arm64_musl": "@package_nif_arm64//file",
+        "//platforms:linux_x86_64_musl": "@package_nif_x86_64//file",
+    }),
+    archive_name = select({
+        "//platforms:linux_arm64_musl": "nif-2.17-aarch64-unknown-linux-musl.so.tar.gz",
+        "//platforms:linux_x86_64_musl": "nif-2.17-x86_64-unknown-linux-musl.so.tar.gz",
+    }),
+)
+
+packages.mix_lock(
+    name = "mix_deps",
+    lockfile = "//:mix.lock",
+    rustler_precompiled_artifacts = {
+        "package": ":package_nif",
+    },
+)
+```
+
+The `//platforms:*` labels above are consumer-owned `config_setting` targets;
+use the runtime ABI constraints already present on the application's target
+platform. Each selected archive remains a declared, checksum-pinned input.
+The action copies only that archive to an action-local
+`RUSTLER_PRECOMPILED_GLOBAL_CACHE_PATH`. The compile action's blocked-network
+policy prevents a missing tuple from turning into an undeclared download.
 
 A fully static OTP runtime cannot dynamically load application NIFs. Static
 crypto-NIF linkage is independent: it may embed OTP's crypto NIF while the BEAM
@@ -253,6 +293,26 @@ generated file only when its last staged content is still unchanged.
 `mix_iex` and `elixir_ls` use the same local graph; the latter expects the
 caller to provide ElixirLS as an ordinary Mix dependency and runs its
 language-server CLI without maintaining a second build tree.
+
+Formatting does not need a compiled application. Declare only the sources and
+formatter inputs that may be changed:
+
+```starlark
+load("@rules_elixir_mix//:defs.bzl", "mix_format")
+
+mix_format(
+    name = "format_sources",
+    srcs = glob(["lib/**/*.ex", "test/**/*.exs"]),
+    formatter_config = ".formatter.exs",
+    mix_config = "mix.exs",
+)
+```
+
+`bazel run //:format_sources` uses the selected hermetic OTP/Elixir toolchain,
+keeps Mix state below `.bazel/elixir_mix`, sets Hex offline, and writes only the
+declared workspace sources. The target has no `mix_library` edge and therefore
+cannot trigger application compilation. Like every writable checkout workflow,
+it is a local `bazel run` command rather than a remote/cacheable build action.
 
 Dependency maintenance is the one deliberately online local workflow. Declare
 it explicitly so network policy is visible in the BUILD graph:

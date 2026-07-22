@@ -2,8 +2,9 @@
 
 load("//bzlmod:mix_lock_test_support.bzl", "parse_mix_lock")
 load("//bzlmod:versions.bzl", "DEFAULT_ELIXIR_VERSION", "DEFAULT_OTP_VERSION", "known_source_versions", "resolve_source_release")
-load("//private:beam_info.bzl", "ErlangAppInfo", "OtpInfo", "crypto_runtime_files", "erl_env_flags", "fips_erl_args", "otp_runtime_env", "otp_runtime_erl_args", "test_erl_launcher")
+load("//private:beam_info.bzl", "ErlangAppInfo", "OtpInfo", "crypto_runtime_files", "erl_env_flags", "otp_runtime_env", "otp_runtime_erl_args", "test_erl_launcher")
 load("//private:runtime_archive_info.bzl", "BeamRuntimeSourceInfo")
+load("//private:rustler_precompiled.bzl", "RustlerPrecompiledArchiveInfo")
 
 _FINGERPRINT_EQUALITY_EVAL = "[L,R]=init:get_plain_arguments(),{ok,LB}=file:read_file(L),{ok,RB}=file:read_file(R),case LB=:=RB of true->halt(0);false->io:format(standard_error,\"compiled artifact fingerprints differ: ~ts ~ts~n\",[L,R]),halt(1) end."
 
@@ -13,7 +14,6 @@ def _fingerprint_equality_test_impl(ctx):
     right = ctx.attr.right[ErlangAppInfo].compile_fingerprint
     args = otp_runtime_erl_args(toolchain.otpinfo, runfiles = True) + [
         "-noshell",
-    ] + fips_erl_args(toolchain.otpinfo, runfiles = True) + [
         "-eval",
         _FINGERPRINT_EQUALITY_EVAL,
         "-extra",
@@ -136,6 +136,23 @@ def _version_catalog_analysis_check_impl(_ctx):
     return []
 
 version_catalog_analysis_check = rule(implementation = _version_catalog_analysis_check_impl)
+
+def _rustler_precompiled_analysis_check_impl(ctx):
+    info = ctx.attr.archive[RustlerPrecompiledArchiveInfo]
+    if info.archive.basename != ctx.attr.expected_basename:
+        fail("selected RustlerPrecompiled archive {}, expected {}".format(
+            info.archive.basename,
+            ctx.attr.expected_basename,
+        ))
+    return []
+
+rustler_precompiled_analysis_check = rule(
+    implementation = _rustler_precompiled_analysis_check_impl,
+    attrs = {
+        "archive": attr.label(mandatory = True, providers = [RustlerPrecompiledArchiveInfo]),
+        "expected_basename": attr.string(mandatory = True),
+    },
+)
 
 def _fake_directory_impl(ctx):
     output = ctx.actions.declare_directory(ctx.label.name)

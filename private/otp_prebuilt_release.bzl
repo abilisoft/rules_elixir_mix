@@ -21,7 +21,7 @@ def _otp_prebuilt_release_impl(ctx):
         fail("a fully static prebuilt OTP must not declare a dynamic SDK execution wrapper")
     if ctx.attr.fips == "required":
         if int(ctx.attr.version.split(".")[0]) < 29:
-            fail("FIPS-required statically linked crypto requires OTP 29 or newer")
+            fail("FIPS-capable statically linked crypto requires OTP 29 or newer")
         if not crypto:
             fail("FIPS-required prebuilt OTP must declare its crypto_sdk contract")
         if not ctx.attr.static_crypto_nif:
@@ -61,7 +61,7 @@ def _otp_prebuilt_release_impl(ctx):
         jit = ctx.attr.jit,
         runtime_wrapped = ctx.attr.runtime_wrapped,
     )
-    activation = prepare_crypto_runtime(ctx, otp_contract, ctx.label.name + "_crypto_state")
+    activation = prepare_crypto_runtime(ctx, otp_contract, ctx.label.name + "_crypto_state", activate = otp_contract.fips == "required")
     crypto_checks = []
     if ctx.attr.static_crypto_nif or ctx.attr.fips == "required":
         crypto_checks.extend([
@@ -123,7 +123,7 @@ def _otp_prebuilt_release_impl(ctx):
     environment.update({
         "ERL_AFLAGS": erl_env_flags(
             otp_runtime_erl_args(otp_contract) +
-            fips_erl_args(otp_contract, activate = False),
+            fips_erl_args(otp_contract, activate = otp_contract.fips == "required"),
         ),
         "HOME": state + "/home",
         "LANG": "C",

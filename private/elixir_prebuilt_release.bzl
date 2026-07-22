@@ -1,6 +1,6 @@
 """Expose an extracted, hermetic Elixir runtime."""
 
-load("//private:beam_info.bzl", "OtpInfo", "execution_erlexec", "execution_erts_bin", "fips_erl_args", "otp_runtime_env", "path_join", "prepare_crypto_runtime")
+load("//private:beam_info.bzl", "OtpInfo", "execution_erlexec", "execution_erts_bin", "otp_runtime_env", "path_join")
 load("//private:elixir_info.bzl", "ElixirInfo", "otp_info_from_dependency")
 
 def _erl_string(value):
@@ -16,7 +16,6 @@ def _elixir_prebuilt_release_impl(ctx):
     elixir_home_short_path = ctx.file.home_marker.short_path.rsplit("/", 2)[0]
     version_file = ctx.actions.declare_file(ctx.label.name + "_version")
     state = ctx.actions.declare_directory(ctx.label.name + "_verification_state")
-    activation = prepare_crypto_runtime(ctx, otp_info, ctx.label.name + "_crypto_state")
     symlink_expression = "".join([
         "{ok,artifact_normalizer,N}=compile:file(",
         _erl_string(ctx.file._normalizer.path),
@@ -38,7 +37,6 @@ def _elixir_prebuilt_release_impl(ctx):
     args.add_all([
         "-noshell",
         "+fnu",
-    ] + fips_erl_args(otp_info, activate = False) + [
         "-eval",
         symlink_expression,
         "-s",
@@ -49,7 +47,6 @@ def _elixir_prebuilt_release_impl(ctx):
         expression,
     ])
     environment = otp_runtime_env(otp_info)
-    environment.update(activation.environment)
     environment.update({
         "ERL_LIBS": path_join(elixir_home, "lib"),
         "HOME": state.path + "/home",
@@ -64,7 +61,7 @@ def _elixir_prebuilt_release_impl(ctx):
         arguments = [args],
         inputs = depset(
             direct = ctx.files.srcs + [ctx.file._normalizer],
-            transitive = [otp_info.runtime_files, activation.files],
+            transitive = [otp_info.runtime_files],
         ),
         outputs = [version_file, state],
         env = environment,
