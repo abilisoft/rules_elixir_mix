@@ -6,7 +6,7 @@ module(
 
 bazel_dep(
     name = "buildifier_prebuilt",
-    version = "8.5.1.3",
+    version = "10.0.1",
     dev_dependency = True,
 )
 
@@ -16,7 +16,7 @@ bazel_dep(
 )
 bazel_dep(
     name = "rules_cc",
-    version = "0.2.22",
+    version = "0.2.25",
 )
 
 elixir_packages = use_extension(
