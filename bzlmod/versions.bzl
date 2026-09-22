@@ -3,11 +3,17 @@
 
 """Immutable source-release catalog shipped with rules_elixir_mix."""
 
-DEFAULT_OTP_VERSION = "29.0.3"
-DEFAULT_ELIXIR_VERSION = "1.20.2"
+DEFAULT_OTP_VERSION = "29.1.1"
+DEFAULT_ELIXIR_VERSION = "1.20.4"
 
 _SOURCE_RELEASES = {
     "elixir": {
+        "1.20.4": struct(
+            archive_type = "tar.gz",
+            sha256 = "2f87be1702583ecbeee82c0ad4d6353de96463cfa0fa6e7557e05f68d90da869",
+            strip_prefix = "elixir-1.20.4",
+            url = "https://github.com/elixir-lang/elixir/archive/refs/tags/v1.20.4.tar.gz",
+        ),
         "1.20.2": struct(
             archive_type = "tar.gz",
             sha256 = "1a25bbf9a9016651fc332eecc02bb9681d0b8e722c2e256e73ddb88fbce6e6b0",
@@ -16,6 +22,12 @@ _SOURCE_RELEASES = {
         ),
     },
     "otp": {
+        "29.1.1": struct(
+            archive_type = "tar.gz",
+            sha256 = "5971c156475408cd77db09a307949b6bcf186a99cde7bc771bb4fef831b1eb13",
+            strip_prefix = "otp-OTP-29.1.1",
+            url = "https://github.com/erlang/otp/archive/refs/tags/OTP-29.1.1.tar.gz",
+        ),
         "29.0.3": struct(
             archive_type = "tar.gz",
             sha256 = "edef13778a449490bc183134e442a955b134d69c56075d97765d8d4951d8d2bb",
